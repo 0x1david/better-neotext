@@ -259,4 +259,8 @@ pub enum FindMode {
     Backwards,
 }
 
-pub struct Command{}
+pub enum Command {
+    Find,
+    Rfind,
+    Leave,
+}
