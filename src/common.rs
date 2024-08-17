@@ -65,6 +65,7 @@ pub enum Action {
     GetUnderCursor,
     OpenFile,
 
+    Nothing
 }
 
 pub trait Pattern {

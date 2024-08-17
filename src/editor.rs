@@ -9,6 +9,7 @@ pub struct Editor<Buff: TextBuffer> {
     modal: Modal,
     action_history: Vec<Action>,
     repeat_action: usize,
+    previous_key: Option<char>
 }
 
 impl<Buff: TextBuffer> Editor<Buff> {
@@ -26,56 +27,66 @@ impl<Buff: TextBuffer> Editor<Buff> {
         }
     }
     fn interpret_normal_event(&self, key_event: KeyEvent) -> Result<Action> {
-   let action = match (key_event.code, key_event.modifiers) {
-        // Cursor Movement
-        (KeyCode::Char('k'), KeyModifiers::NONE) => Action::BumpUp,
-        (KeyCode::Char('j'), KeyModifiers::NONE) => Action::BumpDown,
-        (KeyCode::Char('h'), KeyModifiers::NONE) => Action::BumpLeft,
-        (KeyCode::Char('l'), KeyModifiers::NONE) => Action::BumpRight,
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) => Action::JumpUp,
-        (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::JumpDown,
 
-        (KeyCode::Char('f'), KeyModifiers::NONE) => Action::JumpLetter(' '), // Placeholder, actual char would be read next
-        (KeyCode::Char('F'), KeyModifiers::NONE) => Action::ReverseJumpLetter(' '), // Placeholder
-        (KeyCode::Char('W'), KeyModifiers::NONE) => Action::JumpToNextWord,
-        (KeyCode::Char('w'), KeyModifiers::NONE) => Action::JumpToNextSymbol,
-        (KeyCode::Char('B'), KeyModifiers::NONE) => Action::ReverseJumpToNextWord,
-        (KeyCode::Char('b'), KeyModifiers::NONE) => Action::ReverseJumpToNextSymbol,
-        (KeyCode::Char('_'), KeyModifiers::NONE) => Action::JumpSOL,
-        (KeyCode::Home, _) => Action::JumpSOL,
-        (KeyCode::Char('$'), KeyModifiers::NONE) => Action::JumpEOL,
-        (KeyCode::End, _) => Action::JumpEOL,
-        (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF, // Placeholder
-        (KeyCode::Char('G'), KeyModifiers::NONE) => Action::JumpEOF,
+        let action = if let Some(prev) = self.previous_key {
+            let event = key_event.code
+            match prev  {
+                'f' => Action::JumpLetter(' '), // Placeholder, actual char would be read next
+                (KeyCode::Char('F'), KeyModifiers::NONE) => Action::ReverseJumpLetter(' '), // Placeholder
+            }
+        } else {
+            match (key_event.code, key_event.modifiers) {
+            // Cursor Movement
+            (KeyCode::Char('k'), KeyModifiers::NONE) => Action::BumpUp,
+            (KeyCode::Char('j'), KeyModifiers::NONE) => Action::BumpDown,
+            (KeyCode::Char('h'), KeyModifiers::NONE) => Action::BumpLeft,
+            (KeyCode::Char('l'), KeyModifiers::NONE) => Action::BumpRight,
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => Action::JumpUp,
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::JumpDown,
 
-        // Mode Changes
-        (KeyCode::Char('v'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Visual),
-        (KeyCode::Char('V'), KeyModifiers::NONE) => Action::ChangeMode(Modal::VisualLine),
-        (KeyCode::Char(':'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Command),
-        (KeyCode::Char('A'), KeyModifiers::NONE) => Action::InsertModeEOL,
+            (KeyCode::Char('W'), KeyModifiers::NONE) => Action::JumpToNextWord,
+            (KeyCode::Char('w'), KeyModifiers::NONE) => Action::JumpToNextSymbol,
+            (KeyCode::Char('B'), KeyModifiers::NONE) => Action::ReverseJumpToNextWord,
+            (KeyCode::Char('b'), KeyModifiers::NONE) => Action::ReverseJumpToNextSymbol,
+            (KeyCode::Char('_'), KeyModifiers::NONE) => Action::JumpSOL,
+            (KeyCode::Home, _) => Action::JumpSOL,
+            (KeyCode::Char('$'), KeyModifiers::NONE) => Action::JumpEOL,
+            (KeyCode::End, _) => Action::JumpEOL,
+            (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF, // Placeholder
+            (KeyCode::Char('G'), KeyModifiers::NONE) => Action::JumpEOF,
 
-        // Text Search
-        (KeyCode::Char('/'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find(FindMode::Forwards)),
-        (KeyCode::Char('?'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find(FindMode::Backwards)),
-        (KeyCode::Char('f'), KeyModifiers::NONE) => Action::FindChar(' '), // PlaceholderA
-        (KeyCode::Char('F'), KeyModifiers::NONE) => Action::ReverseFindChar(' '), // Placeholder
+            // Mode Changes
+            (KeyCode::Char('v'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Visual),
+            (KeyCode::Char('V'), KeyModifiers::NONE) => Action::ChangeMode(Modal::VisualLine),
+            (KeyCode::Char(':'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Command),
+            (KeyCode::Char('A'), KeyModifiers::NONE) => Action::InsertModeEOL,
 
-        // Text Manipulation
-        (KeyCode::Char('r'), KeyModifiers::NONE) => Action::Replace(' '), // Placeholder
-        (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertNewline,
-        (KeyCode::Char('O'), KeyModifiers::NONE) => Action::InsertBelow,
-        (KeyCode::Char('X'), KeyModifiers::NONE) => Action::DeleteBefore,
-        (KeyCode::Char('x'), KeyModifiers::NONE) => Action::DeleteUnder,
+            // Text Search
+            (KeyCode::Char('/'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find(FindMode::Forwards)),
+            (KeyCode::Char('?'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find(FindMode::Backwards)),
+            (KeyCode::Char('f'), KeyModifiers::NONE) => Action::FindChar(' '), // PlaceholderA
+            (KeyCode::Char('F'), KeyModifiers::NONE) => Action::ReverseFindChar(' '), // Placeholder
 
-        // Clipboard Operations
-        (KeyCode::Char('p'), KeyModifiers::NONE) => Action::Paste('0'),
-        (KeyCode::Char('P'), KeyModifiers::NONE) => Action::PasteAbove('0'),
+            // Text Manipulation
+            (KeyCode::Char('r'), KeyModifiers::NONE) => Action::Replace(' '), // Placeholder
+            (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertNewline,
+            (KeyCode::Char('O'), KeyModifiers::NONE) => Action::InsertBelow,
+            (KeyCode::Char('X'), KeyModifiers::NONE) => Action::DeleteBefore,
+            (KeyCode::Char('x'), KeyModifiers::NONE) => Action::DeleteUnder,
 
-        // Undo/Redo
-        (KeyCode::Char('u'), KeyModifiers::NONE) => Action::Undo(1),
-        (KeyCode::Char('r'), KeyModifiers::CONTROL) => Action::Redo,
-        otherwise => notif_bar!(format!("No action bound to {otherwise}");),
-    };
+            // Clipboard Operations
+            (KeyCode::Char('p'), KeyModifiers::NONE) => Action::Paste('0'),
+            (KeyCode::Char('P'), KeyModifiers::NONE) => Action::PasteAbove('0'),
+
+            // Undo/Redo
+            (KeyCode::Char('u'), KeyModifiers::NONE) => Action::Undo(1),
+            (KeyCode::Char('r'), KeyModifiers::CONTROL) => Action::Redo,
+            (KeyCode::Char(otherwise), _) => {
+                self.previous_key = Some(otherwise);
+                Action::Nothing
+            }
+        }
+        };
 
         Ok(action)
     }
@@ -95,6 +106,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
             Ok(action)
     }
     fn perform_action(&self, action: Action) -> Result<()> {
+        self.key_combination.rotate_right
         match action {
             Action::Quit => Err(Error::ExitCall),
             Action::BumpUp => todo!(),
