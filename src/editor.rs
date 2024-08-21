@@ -26,13 +26,18 @@ impl<Buff: TextBuffer> Editor<Buff> {
             }
         }
     }
-    fn interpret_normal_event(&self, key_event: KeyEvent) -> Result<Action> {
+    fn interpret_normal_event(&mut self, key_event: KeyEvent) -> Result<Action> {
 
-        let action = if let Some(prev) = self.previous_key {
-            let event = key_event.code
-            match prev  {
-                'f' => Action::JumpLetter(' '), // Placeholder, actual char would be read next
-                (KeyCode::Char('F'), KeyModifiers::NONE) => Action::ReverseJumpLetter(' '), // Placeholder
+        let action = if let Some(prev) = self.previous_key.take() {
+            match (prev, key_event.code) {
+                ('t', KeyCode::Char(c)) => Action::JumpLetter(c),
+                ('T', KeyCode::Char(c)) => Action::ReverseJumpLetter(c),
+                ('f', KeyCode::Char(c)) => Action::FindChar(c),
+                ('F', KeyCode::Char(c)) => Action::ReverseFindChar(c),
+                ('r', KeyCode::Char(c)) => Action::Replace(c),
+                ('p', KeyCode::Char(c)) => Action::Paste(c),
+                ('P', KeyCode::Char(c)) => Action::PasteAbove(c),
+                _ => Action::Nothing
             }
         } else {
             match (key_event.code, key_event.modifiers) {
@@ -49,10 +54,10 @@ impl<Buff: TextBuffer> Editor<Buff> {
             (KeyCode::Char('B'), KeyModifiers::NONE) => Action::ReverseJumpToNextWord,
             (KeyCode::Char('b'), KeyModifiers::NONE) => Action::ReverseJumpToNextSymbol,
             (KeyCode::Char('_'), KeyModifiers::NONE) => Action::JumpSOL,
-            (KeyCode::Home, _) => Action::JumpSOL,
+            (KeyCode::Home, KeyModifiers::NONE) => Action::JumpSOL,
             (KeyCode::Char('$'), KeyModifiers::NONE) => Action::JumpEOL,
-            (KeyCode::End, _) => Action::JumpEOL,
-            (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF, // Placeholder
+            (KeyCode::End, KeyModifiers::NONE) => Action::JumpEOL,
+            (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF,
             (KeyCode::Char('G'), KeyModifiers::NONE) => Action::JumpEOF,
 
             // Mode Changes
@@ -64,27 +69,23 @@ impl<Buff: TextBuffer> Editor<Buff> {
             // Text Search
             (KeyCode::Char('/'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find(FindMode::Forwards)),
             (KeyCode::Char('?'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find(FindMode::Backwards)),
-            (KeyCode::Char('f'), KeyModifiers::NONE) => Action::FindChar(' '), // PlaceholderA
-            (KeyCode::Char('F'), KeyModifiers::NONE) => Action::ReverseFindChar(' '), // Placeholder
 
             // Text Manipulation
-            (KeyCode::Char('r'), KeyModifiers::NONE) => Action::Replace(' '), // Placeholder
             (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertNewline,
             (KeyCode::Char('O'), KeyModifiers::NONE) => Action::InsertBelow,
             (KeyCode::Char('X'), KeyModifiers::NONE) => Action::DeleteBefore,
             (KeyCode::Char('x'), KeyModifiers::NONE) => Action::DeleteUnder,
 
-            // Clipboard Operations
-            (KeyCode::Char('p'), KeyModifiers::NONE) => Action::Paste('0'),
-            (KeyCode::Char('P'), KeyModifiers::NONE) => Action::PasteAbove('0'),
-
             // Undo/Redo
             (KeyCode::Char('u'), KeyModifiers::NONE) => Action::Undo(1),
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => Action::Redo,
             (KeyCode::Char(otherwise), _) => {
-                self.previous_key = Some(otherwise);
+                if matches!(otherwise, 'f' | 'F' | 't' | 'T' | 'p' | 'P' | 'r') {
+                    self.previous_key = Some(otherwise);
+                }
                 Action::Nothing
             }
+            _ => Action::Nothing
         }
         };
 
