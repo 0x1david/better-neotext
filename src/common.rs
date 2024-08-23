@@ -12,7 +12,7 @@ pub enum Action {
     BumpRight,
     JumpUp,
     JumpDown,
-    SetCursor(LineCol),
+    SetCursor(crate::cursor::LineCol),
     JumpLetter(char),
     ReverseJumpLetter(char),
     JumpToNextWord,
@@ -66,6 +66,10 @@ pub enum Action {
     OpenFile,
 
     Nothing
+}
+
+pub trait Component {
+    fn execute_action(&mut self, a: &Action) -> Result<()>;
 }
 
 pub trait Pattern {
@@ -251,6 +255,33 @@ pub enum Modal {
     VisualLine,
     Find(FindMode),
     Command,
+}
+
+impl Modal {
+    pub fn is_normal(&self) -> bool {
+        matches!(&self, Modal::Normal)
+    }
+    pub fn is_insert(&self) -> bool {
+        matches!(&self, Modal::Insert)
+    }
+    pub fn is_visual(&self) -> bool {
+        matches!(&self, Modal::Visual)
+    }
+    pub fn is_visual_line(&self) -> bool {
+        matches!(&self, Modal::VisualLine)
+    }
+    pub fn is_command(&self) -> bool {
+        matches!(&self, Modal::Command)
+    }
+    pub fn is_any_find(&self) -> bool {
+        matches!(&self, Modal::Find(_))
+    }
+    pub fn is_forwards_find(&self) -> bool {
+        matches!(&self, Modal::Find(FindMode::Forwards))
+    }
+    pub fn is_backwards_find(&self) -> bool {
+        matches!(&self, Modal::Find(FindMode::Backwards))
+    }
 }
 
 #[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]

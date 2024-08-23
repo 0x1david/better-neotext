@@ -73,7 +73,7 @@ pub trait TextBuffer {
     /// Get maximum line bound for the current buffer
     fn max_line(&self) -> usize;
     /// Get maximum column bound for the current buffer
-    fn max_col(&self, at: LineCol) -> usize;
+    fn max_col(&self, at: usize) -> usize;
     fn is_command_empty(&self) -> bool;
     fn clear_command(&mut self);
     fn max_linecol(&self) -> LineCol;
@@ -260,8 +260,8 @@ impl TextBuffer for VecBuffer {
             }
         };
     }
-    fn max_col(&self, at: LineCol) -> usize {
-        self.get_buffer()[at.line].len()
+    fn max_col(&self, at: usize) -> usize {
+        self.get_buffer()[at].len()
     }
     fn max_line(&self) -> usize {
         self.get_normal_text().len() - 1

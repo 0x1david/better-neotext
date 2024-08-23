@@ -1,7 +1,5 @@
-use std::{io::stdout, process::exit};
-
-use crate::{buffer::TextBuffer, viewport::ViewPort, Action, Command, Error, FindMode, Modal, Result};
-use crossterm::{event::{self, Event, KeyCode, KeyEvent, KeyModifiers}, execute, terminal};
+use crate::{buffer::TextBuffer, cursor::Cursor, viewport::ViewPort, Action, Command, Component, Error, FindMode, Modal, Result};
+use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 pub struct Editor<Buff: TextBuffer> {
     buffer: Buff,
@@ -9,13 +7,15 @@ pub struct Editor<Buff: TextBuffer> {
     modal: Modal,
     action_history: Vec<Action>,
     repeat_action: usize,
-    previous_key: Option<char>
+    previous_key: Option<char>,
+    cursor: Cursor,
+    extensions: Vec<Box<dyn Component>>
 }
 
 impl<Buff: TextBuffer> Editor<Buff> {
-    fn run_event_loop(&self) -> Result<()>{
+    fn run_event_loop(&mut self) -> Result<()>{
         loop {
-            self.viewport.update_viewport();
+            self.viewport.update_viewport(self.buffer.get_entire_text(), self.cursor.line());
             if let Event::Key(key_event) = event::read()? {
                 let action = match self.modal {
                     Modal::Normal => self.interpret_normal_event(key_event),
@@ -107,7 +107,6 @@ impl<Buff: TextBuffer> Editor<Buff> {
             Ok(action)
     }
     fn perform_action(&self, action: Action) -> Result<()> {
-        self.key_combination.rotate_right
         match action {
             Action::Quit => Err(Error::ExitCall),
             Action::BumpUp => todo!(),
@@ -115,6 +114,11 @@ impl<Buff: TextBuffer> Editor<Buff> {
             Action::BumpLeft => todo!(),
             Action::BumpRight => todo!(),
         }
-
+    }
+    fn delegate_action(&mut self, action: &Action) -> Result<()> {
+        self.cursor.execute_action(action)?;
+        self.viewport.execute_action(action)?;
+        self.extensions.iter().try_for_each(|e| e.execute_action(action));
+        Ok(())
     }
 }
