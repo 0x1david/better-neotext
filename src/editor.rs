@@ -1,5 +1,6 @@
-use crate::{buffer::TextBuffer, cursor::Cursor, viewport::ViewPort, Action, Command, Component, Error, FindMode, Modal, Result};
+use crate::{buffer::{TextBuffer, VecBuffer}, cursor::{Cursor, ShadowCursor}, viewport::ViewPort, Action, Command, Component, Error, FindMode, LineCol, Modal, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+
 
 pub struct Editor<Buff: TextBuffer> {
     buffer: Buff,
@@ -9,13 +10,27 @@ pub struct Editor<Buff: TextBuffer> {
     repeat_action: usize,
     previous_key: Option<char>,
     cursor: Cursor,
-    extensions: Vec<Box<dyn Component>>
+    shadow_cursor: ShadowCursor,
+    extensions: Vec<Box<dyn Component>>,
 }
 
 impl<Buff: TextBuffer> Editor<Buff> {
-    fn run_event_loop(&mut self) -> Result<()>{
+    pub fn new(buff: Buff, without_target: bool) -> Self {
+        Self {
+            buffer: buff,
+            viewport: ViewPort::default(),
+            modal: Modal::Normal,
+            action_history: vec![],
+            repeat_action: 1,
+            previous_key: None,
+            cursor: Cursor::default(),
+            extensions: vec![],
+            shadow_cursor: ShadowCursor {line: 0, col: 0}
+        }
+    }
+    pub fn run_event_loop(&mut self) -> Result<()>{
         loop {
-            self.viewport.update_viewport(self.buffer.get_entire_text(), self.cursor.line());
+            self.viewport.update_viewport(self.buffer.get_entire_text(), &self.cursor)?;
             if let Event::Key(key_event) = event::read()? {
                 let action = match self.modal {
                     Modal::Normal => self.interpret_normal_event(key_event),
@@ -102,23 +117,62 @@ impl<Buff: TextBuffer> Editor<Buff> {
                 KeyCode::Left => Action::BumpLeft,
                 KeyCode::Right => Action::BumpRight,
                 KeyCode::Esc => Action::ChangeMode(Modal::Normal),
-                otherwise => notif_bar!(format!("No action bound to {otherwise}");),
+                _ => Action::Nothing
             };
             Ok(action)
     }
-    fn perform_action(&self, action: Action) -> Result<()> {
+    fn perform_action(&mut self, action: Action) -> Result<()> {
         match action {
             Action::Quit => Err(Error::ExitCall),
-            Action::BumpUp => todo!(),
-            Action::BumpDown => todo!(),
-            Action::BumpLeft => todo!(),
-            Action::BumpRight => todo!(),
+            Action::BumpUp | 
+            Action::BumpDown | 
+            Action::BumpLeft | 
+            Action::BumpRight |
+            Action::JumpUp |
+            Action::JumpDown
+            => self.delegate_action_checked(&action),
+            _ => Ok(())
         }
     }
     fn delegate_action(&mut self, action: &Action) -> Result<()> {
         self.cursor.execute_action(action)?;
         self.viewport.execute_action(action)?;
-        self.extensions.iter().try_for_each(|e| e.execute_action(action));
+        self.extensions.iter_mut().try_for_each(|e| e.execute_action(action))?;
+        Ok(())
+    }
+    /// Ensures a movement Action fits within bounds, if it doesnt the action is changed to a
+    /// bounded version
+    fn delegate_action_checked(&mut self, action: &Action) -> Result<()> {
+        self.shadow_cursor.execute_action(action)?;
+
+        let mut altered = false;
+
+        // Line bound checking
+        if self.shadow_cursor.line > self.buffer.max_line() as i64 {
+            self.delegate_action(&Action::JumpEOF)?;
+            self.shadow_cursor.update(&self.cursor.pos);
+            altered = true;
+        } else if self.shadow_cursor.line < 0 {
+            self.delegate_action(&Action::JumpSOF)?;
+            altered = true;
+            self.shadow_cursor.line = 0;
+        }
+
+        // Col bound checking
+        if self.shadow_cursor.col > self.buffer.max_col(self.shadow_cursor.line as usize) as i64 {
+            self.delegate_action(&Action::JumpEOL)?;
+            altered = true;
+            self.shadow_cursor.update(&self.cursor.pos);
+        } else if self.shadow_cursor.col < 0 {
+            self.delegate_action(&Action::JumpSOL)?;
+            altered = true;
+            self.shadow_cursor.col = 0;
+        }
+        
+        if !altered {
+            self.delegate_action(action)?
+        };
+
         Ok(())
     }
 }

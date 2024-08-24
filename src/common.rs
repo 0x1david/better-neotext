@@ -1,4 +1,5 @@
 use std::{borrow::Cow, cmp::Ordering, fmt::Display};
+use crate::cursor::Cursor;
 pub(crate) use crate::error::{Error, Result};
 
 pub enum Action {
@@ -12,7 +13,7 @@ pub enum Action {
     BumpRight,
     JumpUp,
     JumpDown,
-    SetCursor(crate::cursor::LineCol),
+    SetCursor(LineCol),
     JumpLetter(char),
     ReverseJumpLetter(char),
     JumpToNextWord,
@@ -229,6 +230,15 @@ impl PartialOrd for LineCol {
 pub struct Selection {
     pub start: LineCol,
     pub end: LineCol,
+}
+
+impl From<&Cursor> for Selection {
+    fn from(value: &Cursor) -> Self {
+        Self {
+            start: value.last_text_mode_pos,
+            end: value.pos,
+        }
+    }
 }
 
 impl Selection {

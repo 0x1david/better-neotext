@@ -1,10 +1,11 @@
 use std::io::{self, Stdout, Write};
-use crate::{cursor::Cursor, Component, Result, Selection};
+use crate::{cursor::Cursor, Component, Modal, Result, Selection};
 
 use crossterm::{execute, style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal::{self, ClearType, LeaveAlternateScreen}};
 
 const NO_OF_BARS: u8 = 2;
-
+pub const LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS: usize = 4;
+pub const LINE_NUMBER_RESERVED_COLUMNS: usize = 5;
 
 pub struct ViewPort {
     terminal: Stdout,
@@ -12,13 +13,15 @@ pub struct ViewPort {
     height: u16,
     top_border: usize,
     bottom_border: usize,
+    mode: Modal
 }
 
 impl Component for ViewPort {
     fn execute_action(&mut self, a: &crate::Action) -> Result<()> {
         match a {
-            _ => todo!()
-        }
+            _ => ()
+        };
+        Ok(())
     }
 }
 
@@ -41,13 +44,16 @@ impl Default for ViewPort {
         Self {
             terminal,
             width,
-            height
+            height,
+            top_border: 0,
+            bottom_border: height as usize,
+            mode: Modal::Normal
         }
     }
 }
 
 impl ViewPort {
-    pub fn update_viewport(&mut self, buf: &[String], cursor_line: usize) -> Result<()> {
+    pub fn update_viewport(&mut self, buf: &[String], cursor: &Cursor) -> Result<()> {
 
         // Prepare Viewport
         (self.width, self.height) = terminal::size().expect("Failed reading terminal information");
@@ -57,23 +63,49 @@ impl ViewPort {
             crossterm::cursor::MoveTo(0, 0),
             )?;
 
-        // Write Content
-        for (i, line) in buf[self.top_border..=self.bottom_border.saturating_sub(NO_OF_BARS as usize)]
+         // Calculate the range of lines to display
+        let start = self.top_border;
+        let end = self.bottom_border.saturating_sub(NO_OF_BARS as usize);
+        let visible_lines = end.saturating_sub(start) + 1;
+
+        // Create an iterator that pads with empty strings if out of bounds
+        let padded_iter = buf[start..]
             .iter()
-            .enumerate()
-        {
-            let line_number = self.top_border + i;
+            .map(|s| s.as_str())
+            .chain(std::iter::repeat(""))
+            .take(visible_lines);
 
+        // Write Content
+        for (i, line) in padded_iter.enumerate() {
+            let line_number = start + i;
             execute!(self.terminal, terminal::Clear(ClearType::CurrentLine))?;
-
-            self.create_line_numbers(&mut stdout, line_number + 1)?;
-            self.draw_line(line, line_number)?;
+            self.create_line_numbers(line_number + 1, cursor.line())?;
+            self.draw_line(line, line_number, cursor)?;
         }
 
         Ok(())
     }
 
-    fn draw_line(&self, line: impl AsRef<str>, absolute_ln: usize, cursor: &Cursor) -> Result<()> {
+    fn create_line_numbers(&mut self, line_number: usize, cursor_line: usize) -> Result<()> {
+        execute!(self.terminal, SetForegroundColor(Color::Green))?;
+        let rel_line_number = (line_number as i64 - cursor_line as i64 - 1).abs();
+        let line_number = if rel_line_number == 0 {
+            line_number as i64
+        } else {
+            rel_line_number
+        };
+
+        print!(
+            "{line_number:>width$}{separator}",
+            line_number = line_number,
+            width = LINE_NUMBER_RESERVED_COLUMNS,
+            separator = " ".repeat(LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS)
+        );
+        execute!(self.terminal, ResetColor)?;
+        Ok(())
+    }
+
+    fn draw_line(&mut self, line: impl AsRef<str>, absolute_ln: usize, cursor: &Cursor) -> Result<()> {
         let line = line.as_ref();
         let selection = Selection::from(cursor).normalized();
 
@@ -83,6 +115,7 @@ impl ViewPort {
             || absolute_ln > selection.start.line
                 && (absolute_ln < selection.end.line.saturating_sub(1) && self.mode.is_visual());
 
+        // Decide on which parts to highlight
         if highlight_whole_line {
             execute!(
                 self.terminal,
@@ -91,7 +124,7 @@ impl ViewPort {
             )?;
             write!(self.terminal, "{}\r", line)?;
             execute!(self.terminal, ResetColor)?;
-        } else if self.mode.is_visual() && line_in_highlight_bounds {
+        } else if self.mode.is_visual() && line_in_highlight_bounds{
             let start_col = if absolute_ln == selection.start.line {
                 selection.start.col
             } else {
@@ -103,8 +136,10 @@ impl ViewPort {
                 line.len()
             };
 
+            // Write line - before Selection
             write!(self.terminal, "{}", &line[..start_col])?;
 
+            // Write Whole Selection
             execute!(
                 self.terminal,
                 SetBackgroundColor(Color::White),
@@ -113,7 +148,7 @@ impl ViewPort {
             write!(self.terminal, "{}", &line[start_col..end_col])?;
             execute!(self.terminal, ResetColor)?;
 
-            // Print part after selection
+            // Print last line - after selection
             write!(self.terminal, "{}\r", &line[end_col..])?;
         } else {
             write!(self.terminal, "{}\r", line)?;

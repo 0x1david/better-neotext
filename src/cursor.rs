@@ -1,30 +1,9 @@
 use std::{cmp::Ordering, fmt::Display};
 
-use crate::{Component, Modal, Action};
+use crate::{Component, Modal, Action, LineCol};
 
 const JUMP_DIST: usize = 25;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub struct LineCol {
-    pub line: usize,
-    pub col: usize,
-}
-
-
-impl Display for LineCol {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}:{}", self.line, self.col)
-    }
-}
-
-impl PartialOrd for LineCol {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        match self.line.cmp(&other.line) {
-            Ordering::Equal => self.col.cmp(&other.col).into(),
-            otherwise => Some(otherwise),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Selection {
@@ -44,14 +23,6 @@ impl Selection {
     }
 }
 
-impl From<&Cursor> for Selection {
-    fn from(value: &Cursor) -> Self {
-        Self {
-            start: value.last_text_mode_pos,
-            end: value.pos,
-        }
-    }
-}
 
 /// The overarching cursor struct
 #[derive(Clone, Debug)]
@@ -61,6 +32,41 @@ pub struct Cursor {
     pos_initial: LineCol,
     plane: CursorPlane,
     pub last_text_mode_pos: LineCol,
+}
+
+pub struct ShadowCursor {pub line: i64, pub col: i64}
+
+impl From<&LineCol> for ShadowCursor {
+    fn from(value: &LineCol) -> Self {
+        Self {
+            line:  value.line as i64,
+            col:  value.col as i64,
+        }
+    }
+}
+impl ShadowCursor {
+    pub fn update(&mut self, lc: &LineCol) {
+        self.line = lc.line as i64;
+        self.col = lc.col as i64;
+    }
+}
+
+impl Component for ShadowCursor {
+    fn execute_action(&mut self, a: &Action) -> crate::Result<()> {
+        match a {
+            Action::BumpUp => self.line += 1,
+            Action::BumpDown => self.line -= 1,
+            Action::BumpLeft => self.col -= 1,
+            Action::BumpRight=> self.col += 1,
+            Action::JumpUp => self.line += JUMP_DIST as i64,
+            Action::JumpDown => self.line -= JUMP_DIST as i64,
+            Action::SetCursor(lc) => {
+                self.update(lc)
+            }
+            _ => (),
+        };
+        Ok(())
+    }
 }
 
 impl Component for Cursor {
@@ -160,7 +166,7 @@ impl Cursor {
     #[inline]
     fn jump_left(&mut self, dist: usize) {
         self.previous_pos = self.pos;
-        let dest = self.col().saturating_sub(dist);
+        let dest = self.col() - dist;
         self.set_col(dest)
     }
 
@@ -176,7 +182,7 @@ impl Cursor {
     #[inline]
     fn jump_up(&mut self, dist: usize) {
         self.previous_pos = self.pos;
-        let dest = self.line().saturating_sub(dist);
+        let dest = self.line() - dist;
         self.set_line(dest);
     }
 
