@@ -1,4 +1,4 @@
-use crate::{LineCol, Modal, Pattern, Error, Result};
+use crate::{Error, LineCol, Modal, Pattern, Result};
 use std::collections::VecDeque;
 
 /// Trait defining the interface for a text buffer
@@ -261,7 +261,7 @@ impl TextBuffer for VecBuffer {
         };
     }
     fn max_col(&self, at: usize) -> usize {
-        self.get_buffer()[at].len()
+        self.get_buffer()[at].len() - 1
     }
     fn max_line(&self) -> usize {
         self.get_normal_text().len() - 1

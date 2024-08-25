@@ -1,7 +1,11 @@
-use std::io::{self, Stdout, Write};
 use crate::{cursor::Cursor, BaseAction, Component, Modal, Result, Selection};
+use std::io::{self, Stdout, Write};
 
-use crossterm::{execute, style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal::{self, ClearType, LeaveAlternateScreen}};
+use crossterm::{
+    execute,
+    style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor},
+    terminal::{self, ClearType, LeaveAlternateScreen},
+};
 
 const NO_OF_BARS: u8 = 2;
 pub const LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS: usize = 4;
@@ -13,15 +17,29 @@ pub struct ViewPort {
     height: u16,
     top_border: usize,
     bottom_border: usize,
-    mode: Modal
+    mode: Modal,
 }
 
 impl Component for ViewPort {
     fn execute_action(&mut self, a: &BaseAction) -> Result<()> {
+        println!("Executing Action at Viewport: {:?}", a);
         match a {
-            _ => ()
+            BaseAction::MoveUp(dist) => self.move_up(*dist),
+            BaseAction::MoveDown(dist) => self.move_down(*dist),
+            _ => (),
         };
         Ok(())
+    }
+}
+
+impl ViewPort {
+    fn move_up(&mut self, dist: usize) {
+        self.top_border -= dist;
+        self.bottom_border -= dist;
+    }
+    fn move_down(&mut self, dist: usize) {
+        self.top_border += dist;
+        self.bottom_border += dist;
     }
 }
 
@@ -47,23 +65,22 @@ impl Default for ViewPort {
             height,
             top_border: 0,
             bottom_border: height as usize,
-            mode: Modal::Normal
+            mode: Modal::Normal,
         }
     }
 }
 
 impl ViewPort {
     pub fn update_viewport(&mut self, buf: &[String], cursor: &Cursor) -> Result<()> {
-
         // Prepare Viewport
         (self.width, self.height) = terminal::size().expect("Failed reading terminal information");
         execute!(
             self.terminal,
             terminal::Clear(ClearType::All),
             crossterm::cursor::MoveTo(0, 0),
-            )?;
+        )?;
 
-         // Calculate the range of lines to display
+        // Calculate the range of lines to display
         let start = self.top_border;
         let end = self.bottom_border.saturating_sub(NO_OF_BARS as usize);
         let visible_lines = end.saturating_sub(start) + 1;
@@ -105,7 +122,12 @@ impl ViewPort {
         Ok(())
     }
 
-    fn draw_line(&mut self, line: impl AsRef<str>, absolute_ln: usize, cursor: &Cursor) -> Result<()> {
+    fn draw_line(
+        &mut self,
+        line: impl AsRef<str>,
+        absolute_ln: usize,
+        cursor: &Cursor,
+    ) -> Result<()> {
         let line = line.as_ref();
         let selection = Selection::from(cursor).normalized();
 
@@ -124,7 +146,7 @@ impl ViewPort {
             )?;
             write!(self.terminal, "{}\r", line)?;
             execute!(self.terminal, ResetColor)?;
-        } else if self.mode.is_visual() && line_in_highlight_bounds{
+        } else if self.mode.is_visual() && line_in_highlight_bounds {
             let start_col = if absolute_ln == selection.start.line {
                 selection.start.col
             } else {

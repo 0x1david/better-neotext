@@ -2,8 +2,6 @@ use std::{cmp::Ordering, fmt::Display};
 
 use crate::{BaseAction, Component, LineCol, Modal};
 
-
-
 #[derive(Debug, Clone, Copy)]
 pub struct Selection {
     pub start: LineCol,
@@ -22,7 +20,6 @@ impl Selection {
     }
 }
 
-
 /// The overarching cursor struct
 #[derive(Clone, Debug)]
 pub struct Cursor {
@@ -33,13 +30,16 @@ pub struct Cursor {
     pub last_text_mode_pos: LineCol,
 }
 
-pub struct ShadowCursor {pub line: i64, pub col: i64}
+pub struct ShadowCursor {
+    pub line: i64,
+    pub col: i64,
+}
 
 impl From<&LineCol> for ShadowCursor {
     fn from(value: &LineCol) -> Self {
         Self {
-            line:  value.line as i64,
-            col:  value.col as i64,
+            line: value.line as i64,
+            col: value.col as i64,
         }
     }
 }
@@ -52,14 +52,13 @@ impl ShadowCursor {
 
 impl Component for ShadowCursor {
     fn execute_action(&mut self, a: &BaseAction) -> crate::Result<()> {
+        println!("Executing Action at ShadowCursor: {:?}", a);
         match a {
-            BaseAction::MoveUp(dist)=> self.line += *dist as i64,
-            BaseAction::MoveDown(dist)=> self.line -= *dist as i64,
+            BaseAction::MoveUp(dist) => self.line += *dist as i64,
+            BaseAction::MoveDown(dist) => self.line -= *dist as i64,
             BaseAction::MoveLeft(dist) => self.col -= *dist as i64,
             BaseAction::MoveRight(dist) => self.col += *dist as i64,
-            BaseAction::SetCursor(lc) => {
-                self.update(*lc)
-            }
+            BaseAction::SetCursor(lc) => self.update(*lc),
             _ => (),
         };
         Ok(())
@@ -68,6 +67,7 @@ impl Component for ShadowCursor {
 
 impl Component for Cursor {
     fn execute_action(&mut self, a: &BaseAction) -> crate::Result<()> {
+        println!("Executing Action at cursor: {:?}", a);
         match a {
             BaseAction::MoveUp(dist) => self.move_up(dist),
             BaseAction::MoveDown(dist) => self.move_down(dist),

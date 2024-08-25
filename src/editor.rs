@@ -1,6 +1,11 @@
 use std::collections::VecDeque;
 
-use crate::{buffer::TextBuffer, cursor::{Cursor, ShadowCursor}, viewport::ViewPort, BaseAction, Command, Component, Error, FindMode, LineCol, Modal, Pattern, Result};
+use crate::{
+    buffer::TextBuffer,
+    cursor::{Cursor, ShadowCursor},
+    viewport::ViewPort,
+    BaseAction, Command, Component, Error, FindMode, LineCol, Modal, Pattern, Result,
+};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 
 const JUMP_DIST: usize = 25;
@@ -30,34 +35,38 @@ impl<Buff: TextBuffer> Editor<Buff> {
             previous_key: None,
             cursor: Cursor::default(),
             extensions: Vec::new(),
-            shadow_cursor: ShadowCursor {line: 0, col: 0}
+            shadow_cursor: ShadowCursor { line: 0, col: 0 },
         }
     }
-    pub fn run_event_loop(&mut self) -> Result<()>{
+    pub fn run_event_loop(&mut self) -> Result<()> {
         loop {
-            self.viewport.update_viewport(self.buffer.get_entire_text(), &self.cursor)?;
+            self.viewport
+                .update_viewport(self.buffer.get_entire_text(), &self.cursor)?;
             if let Event::Key(key_event) = event::read()? {
                 let action = match self.modal {
                     Modal::Normal => self.interpret_normal_event(key_event),
                     Modal::Insert => self.interpret_insert_event(key_event),
                     Modal::Command => self.interpret_command_event(key_event),
-                    _ => continue
+                    _ => continue,
                 }?;
+
+                self.action_history.push(action.clone());
                 self.add_to_action_queue(action)?;
                 self.consume_action_queue()?;
+
+                self.shadow_cursor.update(self.cursor.pos)
             }
-            return Ok(())
+            return Ok(());
         }
     }
     fn consume_action_queue(&mut self) -> Result<()> {
         let actions: Vec<_> = self.action_queue.drain(..).collect();
         for action in actions {
-            self.delegate_action(&action)?;
+            self.perform_action(action)?;
         }
         Ok(())
     }
     fn interpret_normal_event(&mut self, key_event: KeyEvent) -> Result<Action> {
-
         let action = if let Some(prev) = self.previous_key.take() {
             match (prev, key_event.code) {
                 ('t', KeyCode::Char(c)) => Action::FindChar(c),
@@ -67,58 +76,63 @@ impl<Buff: TextBuffer> Editor<Buff> {
                 ('r', KeyCode::Char(c)) => Action::Replace(c),
                 ('p', KeyCode::Char(c)) => Action::Paste(c),
                 ('P', KeyCode::Char(c)) => Action::PasteAbove(c),
-                _ => Action::Nothing
+                _ => Action::Nothing,
             }
         } else {
             match (key_event.code, key_event.modifiers) {
-            // Cursor Movement
-            (KeyCode::Char('k'), KeyModifiers::NONE) => Action::BumpUp,
-            (KeyCode::Char('j'), KeyModifiers::NONE) => Action::BumpDown,
-            (KeyCode::Char('h'), KeyModifiers::NONE) => Action::BumpLeft,
-            (KeyCode::Char('l'), KeyModifiers::NONE) => Action::BumpRight,
-            (KeyCode::Char('u'), KeyModifiers::CONTROL) => Action::JumpUp,
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::JumpDown,
+                // Cursor Movement
+                (KeyCode::Char('k'), KeyModifiers::NONE) => Action::BumpUp,
+                (KeyCode::Char('j'), KeyModifiers::NONE) => Action::BumpDown,
+                (KeyCode::Char('h'), KeyModifiers::NONE) => Action::BumpLeft,
+                (KeyCode::Char('l'), KeyModifiers::NONE) => Action::BumpRight,
+                (KeyCode::Char('u'), KeyModifiers::CONTROL) => Action::JumpUp,
+                (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::JumpDown,
 
-            (KeyCode::Char('W'), KeyModifiers::NONE) => Action::JumpToNextWord,
-            (KeyCode::Char('w'), KeyModifiers::NONE) => Action::JumpToNextSymbol,
-            (KeyCode::Char('B'), KeyModifiers::NONE) => Action::ReverseJumpToNextWord,
-            (KeyCode::Char('b'), KeyModifiers::NONE) => Action::ReverseJumpToNextSymbol,
-            (KeyCode::Char('_'), KeyModifiers::NONE) => Action::JumpSOL,
-            (KeyCode::Home, KeyModifiers::NONE) => Action::JumpSOL,
-            (KeyCode::Char('$'), KeyModifiers::NONE) => Action::JumpEOL,
-            (KeyCode::End, KeyModifiers::NONE) => Action::JumpEOL,
-            (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF,
-            (KeyCode::Char('G'), KeyModifiers::NONE) => Action::JumpEOF,
+                (KeyCode::Char('W'), KeyModifiers::NONE) => Action::JumpToNextWord,
+                (KeyCode::Char('w'), KeyModifiers::NONE) => Action::JumpToNextSymbol,
+                (KeyCode::Char('B'), KeyModifiers::NONE) => Action::ReverseJumpToNextWord,
+                (KeyCode::Char('b'), KeyModifiers::NONE) => Action::ReverseJumpToNextSymbol,
+                (KeyCode::Char('_'), KeyModifiers::NONE) => Action::JumpSOL,
+                (KeyCode::Home, KeyModifiers::NONE) => Action::JumpSOL,
+                (KeyCode::Char('$'), KeyModifiers::NONE) => Action::JumpEOL,
+                (KeyCode::End, KeyModifiers::NONE) => Action::JumpEOL,
+                (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF,
+                (KeyCode::Char('G'), KeyModifiers::NONE) => Action::JumpEOF,
 
-            // Mode Changes
-            (KeyCode::Char('v'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Visual),
-            (KeyCode::Char('V'), KeyModifiers::NONE) => Action::ChangeMode(Modal::VisualLine),
-            (KeyCode::Char(':'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Command),
-            (KeyCode::Char('A'), KeyModifiers::NONE) => Action::InsertModeEOL,
+                // Mode Changes
+                (KeyCode::Char('v'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Visual),
+                (KeyCode::Char('V'), KeyModifiers::NONE) => Action::ChangeMode(Modal::VisualLine),
+                (KeyCode::Char(':'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Command),
+                (KeyCode::Char('A'), KeyModifiers::NONE) => Action::InsertModeEOL,
 
-            // Text Search
-            (KeyCode::Char('/'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find(FindMode::Forwards)),
-            (KeyCode::Char('?'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find(FindMode::Backwards)),
-
-            // Text Manipulation
-            (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertModeBelow,
-            (KeyCode::Char('O'), KeyModifiers::NONE) => Action::InsertModeAbove,
-            (KeyCode::Char('X'), KeyModifiers::NONE) => Action::DeleteBefore,
-            (KeyCode::Char('x'), KeyModifiers::NONE) => Action::DeleteUnder,
-
-            // Undo/Redo
-            (KeyCode::Char('u'), KeyModifiers::NONE) => Action::Undo(1),
-            (KeyCode::Char('r'), KeyModifiers::CONTROL) => Action::Redo,
-            (KeyCode::Char(otherwise), _) => {
-                if matches!(otherwise, 'f' | 'F' | 't' | 'T' | 'p' | 'P' | 'r') {
-                    self.previous_key = Some(otherwise);
+                // Text Search
+                (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                    Action::ChangeMode(Modal::Find(FindMode::Forwards))
                 }
-                Action::Nothing
+                (KeyCode::Char('?'), KeyModifiers::NONE) => {
+                    Action::ChangeMode(Modal::Find(FindMode::Backwards))
+                }
+
+                // Text Manipulation
+                (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertModeBelow,
+                (KeyCode::Char('O'), KeyModifiers::NONE) => Action::InsertModeAbove,
+                (KeyCode::Char('X'), KeyModifiers::NONE) => Action::DeleteBefore,
+                (KeyCode::Char('x'), KeyModifiers::NONE) => Action::DeleteUnder,
+
+                // Undo/Redo
+                (KeyCode::Char('u'), KeyModifiers::NONE) => Action::Undo(1),
+                (KeyCode::Char('r'), KeyModifiers::CONTROL) => Action::Redo,
+                (KeyCode::Char(otherwise), _) => {
+                    if matches!(otherwise, 'f' | 'F' | 't' | 'T' | 'p' | 'P' | 'r') {
+                        self.previous_key = Some(otherwise);
+                    }
+                    Action::Nothing
+                }
+                _ => Action::Nothing,
             }
-            _ => Action::Nothing
-        }
         };
 
+        println!("Translated Action: {:?}", action);
         Ok(action)
     }
     fn interpret_insert_event(&self, key_event: KeyEvent) -> Result<Action> {
@@ -126,32 +140,40 @@ impl<Buff: TextBuffer> Editor<Buff> {
     }
 
     fn interpret_command_event(&self, key_event: KeyEvent) -> Result<Action> {
-            let action = match key_event.code {
-                // Enter will execute different commands for command/find and rfind
-                KeyCode::Enter => Action::ExecuteCommand(Command::Find),
-                KeyCode::Char(c) => Action::InsertCharAtCursor(c),
-                KeyCode::Up => Action::BumpUp,
-                KeyCode::Down => Action::BumpDown,
-                KeyCode::Backspace => Action::DeleteBefore,
-                KeyCode::Left => Action::BumpLeft,
-                KeyCode::Right => Action::BumpRight,
-                KeyCode::Esc => Action::ChangeMode(Modal::Normal),
-                _ => Action::Nothing
-            };
-            Ok(action)
+        let action = match key_event.code {
+            // Enter will execute different commands for command/find and rfind
+            KeyCode::Enter => Action::ExecuteCommand(Command::Find),
+            KeyCode::Char(c) => Action::InsertCharAtCursor(c),
+            KeyCode::Up => Action::BumpUp,
+            KeyCode::Down => Action::BumpDown,
+            KeyCode::Backspace => Action::DeleteBefore,
+            KeyCode::Left => Action::BumpLeft,
+            KeyCode::Right => Action::BumpRight,
+            KeyCode::Esc => Action::ChangeMode(Modal::Normal),
+            _ => Action::Nothing,
+        };
+        Ok(action)
     }
+    // Decides on how to delegate a given base action
     fn perform_action(&mut self, action: BaseAction) -> Result<()> {
+        println!("Performing Action: {:?}", action);
         match action {
-            BaseAction::MoveUp(_)| BaseAction::MoveDown(_)| BaseAction::MoveLeft(_)| BaseAction::MoveRight(_)
-            => self.delegate_action_bound_checked(&action),
-            _ => Ok(())
+            BaseAction::MoveUp(_)
+            | BaseAction::MoveDown(_)
+            | BaseAction::MoveLeft(_)
+            | BaseAction::MoveRight(_)
+            | BaseAction::SetCursor(_) => self.delegate_action_bound_checked(&action),
+            _ => Ok(()),
         }
     }
     fn delegate_action(&mut self, action: &BaseAction) -> Result<()> {
+        println!("Delegating Action: {:?}", action);
         self.cursor.execute_action(action)?;
         self.viewport.execute_action(action)?;
         self.shadow_cursor.execute_action(action)?;
-        self.extensions.iter_mut().try_for_each(|e| e.execute_action(action))?;
+        self.extensions
+            .iter_mut()
+            .try_for_each(|e| e.execute_action(action))?;
         Ok(())
     }
     /// Ensures a movement Action fits within bounds, if it doesnt the action is changed to a
@@ -163,12 +185,14 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
         // Line bound checking
         if self.shadow_cursor.line > self.buffer.max_line() as i64 {
+            self.shadow_cursor.line = self.cursor.pos.line as i64;
             let actions = self.resolve_action(Action::JumpEOF)?;
             for a in actions {
                 self.delegate_action(&a)?
             }
             altered = true;
         } else if self.shadow_cursor.line < 0 {
+            self.shadow_cursor.line = self.cursor.pos.line as i64;
             let actions = self.resolve_action(Action::JumpSOF)?;
             for a in actions {
                 self.delegate_action(&a)?
@@ -178,19 +202,21 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
         // Col bound checking
         if self.shadow_cursor.col > self.buffer.max_col(self.shadow_cursor.line as usize) as i64 {
+            self.shadow_cursor.col = self.cursor.pos.col as i64;
             let actions = self.resolve_action(Action::JumpEOL)?;
             for a in actions {
                 self.delegate_action(&a)?
             }
             altered = true;
         } else if self.shadow_cursor.col < 0 {
+            self.shadow_cursor.col = self.cursor.pos.col as i64;
             let actions = self.resolve_action(Action::JumpSOL)?;
             for a in actions {
                 self.delegate_action(&a)?
             }
             altered = true;
         }
-        
+
         if !altered {
             self.delegate_action(action)?
         };
@@ -201,7 +227,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
         match api_action {
             // No-op and exit actions
             Action::Nothing => Ok(vec![]),
-            Action::Quit => return Err(Error::ExitCall),
+            Action::Quit => Err(Error::ExitCall),
 
             // Basic cursor movements
             Action::BumpUp => Ok(vec![BaseAction::MoveUp(1)]),
@@ -213,48 +239,88 @@ impl<Buff: TextBuffer> Editor<Buff> {
             Action::JumpUp => Ok(vec![BaseAction::MoveUp(JUMP_DIST)]),
             Action::JumpDown => Ok(vec![BaseAction::MoveDown(JUMP_DIST)]),
             Action::JumpSOL => Ok(vec![BaseAction::MoveLeft(self.cursor.col())]),
-            Action::JumpEOL => Ok(vec![BaseAction::MoveRight(self.buffer.max_col(self.cursor.line()) - self.cursor.col())]),
+            Action::JumpEOL => Ok(vec![BaseAction::MoveRight(
+                self.buffer.max_col(self.cursor.line()) - self.cursor.col(),
+            )]),
             Action::JumpSOF => Ok(vec![BaseAction::MoveUp(self.cursor.line())]),
             Action::JumpEOF => Ok(vec![BaseAction::MoveDown(self.buffer.max_line())]),
 
             // Word and symbol navigation
-            Action::JumpToNextWord => Ok(vec![self.jump_two_boundaries(Direction::Forward, char::is_whitespace, |ch| !ch.is_whitespace())?]),
-            Action::JumpToNextSymbol => Ok(vec![self.jump_two_boundaries(Direction::Forward, |ch| !ch.is_whitespace(), |ch| !ch.is_whitespace())?]),
-            Action::ReverseJumpToNextWord => Ok(vec![self.jump_two_boundaries(Direction::Backward, char::is_whitespace, |ch| !ch.is_whitespace())?]),
-            Action::ReverseJumpToNextSymbol => Ok(vec![self.jump_two_boundaries(Direction::Backward, |ch| !ch.is_whitespace(), |ch| !ch.is_whitespace())?]),
+            Action::JumpToNextWord => Ok(vec![self.jump_two_boundaries(
+                Direction::Forward,
+                char::is_whitespace,
+                |ch| !ch.is_whitespace(),
+            )?]),
+            Action::JumpToNextSymbol => Ok(vec![self.jump_two_boundaries(
+                Direction::Forward,
+                |ch| !ch.is_whitespace(),
+                |ch| !ch.is_whitespace(),
+            )?]),
+            Action::ReverseJumpToNextWord => Ok(vec![self.jump_two_boundaries(
+                Direction::Backward,
+                char::is_whitespace,
+                |ch| !ch.is_whitespace(),
+            )?]),
+            Action::ReverseJumpToNextSymbol => Ok(vec![self.jump_two_boundaries(
+                Direction::Backward,
+                |ch| !ch.is_whitespace(),
+                |ch| !ch.is_whitespace(),
+            )?]),
 
             // Find and search actions
-            Action::Find(pat) => Ok(vec![self.resolve_find(|p, pos| self.buffer.find(p, pos), pat)?]),
-            Action::ReverseFind(pat) => Ok(vec![self.resolve_find(|p, pos| self.buffer.rfind(p, pos), pat)?]),
+            Action::Find(pat) => Ok(vec![
+                self.resolve_find(|p, pos| self.buffer.find(p, pos), pat)?
+            ]),
+            Action::ReverseFind(pat) => Ok(vec![
+                self.resolve_find(|p, pos| self.buffer.rfind(p, pos), pat)?
+            ]),
             Action::FindChar(ch) => self.resolve_action(Action::Find(ch.to_string())),
             Action::ReverseFindChar(ch) => self.resolve_action(Action::ReverseFind(ch.to_string())),
             Action::ToChar(ch) => {
                 let mut actions = self.resolve_action(Action::FindChar(ch))?;
                 actions.push(BaseAction::MoveLeft(1));
                 Ok(actions)
-            },
+            }
             Action::ReverseToChar(ch) => {
                 let mut actions = self.resolve_action(Action::ReverseFindChar(ch))?;
                 actions.push(BaseAction::MoveRight(1));
                 Ok(actions)
-            },
+            }
 
             // Mode change actions
             Action::ChangeMode(mode) => Ok(vec![BaseAction::ChangeMode(mode)]),
             Action::InsertModeEOL => {
                 let dist = self.buffer.max_col(self.cursor.line()) - self.cursor.col();
-                Ok(vec![BaseAction::MoveRight(dist), BaseAction::ChangeMode(Modal::Insert)])
-            },
-            Action::InsertModeBelow => Ok(vec![BaseAction::MoveDown(1), BaseAction::ChangeMode(Modal::Insert)]),
-            Action::InsertModeAbove => Ok(vec![BaseAction::MoveUp(1), BaseAction::ChangeMode(Modal::Insert)]),
+                Ok(vec![
+                    BaseAction::MoveRight(dist),
+                    BaseAction::ChangeMode(Modal::Insert),
+                ])
+            }
+            Action::InsertModeBelow => Ok(vec![
+                BaseAction::MoveDown(1),
+                BaseAction::ChangeMode(Modal::Insert),
+            ]),
+            Action::InsertModeAbove => Ok(vec![
+                BaseAction::MoveUp(1),
+                BaseAction::ChangeMode(Modal::Insert),
+            ]),
 
             // Edit actions
             Action::Save => Ok(vec![BaseAction::Save]),
             Action::Yank => Ok(vec![BaseAction::Yank]),
             Action::Redo => Ok(vec![BaseAction::Redo]),
-            Action::DeleteUnder => Ok(vec![BaseAction::MoveDown(1), BaseAction::DeleteCurrentLine, BaseAction::MoveUp(1)]),
-            Action::Replace(char) => Ok(vec![BaseAction::DeleteUnderCursor, BaseAction::InsertUnderCursor(char)]),
-            Action::DeleteBefore => Ok(vec![BaseAction::MoveLeft(1), BaseAction::DeleteUnderCursor]),
+            Action::DeleteUnder => Ok(vec![
+                BaseAction::MoveDown(1),
+                BaseAction::DeleteCurrentLine,
+                BaseAction::MoveUp(1),
+            ]),
+            Action::Replace(char) => Ok(vec![
+                BaseAction::DeleteUnderCursor,
+                BaseAction::InsertUnderCursor(char),
+            ]),
+            Action::DeleteBefore => {
+                Ok(vec![BaseAction::MoveLeft(1), BaseAction::DeleteUnderCursor])
+            }
             Action::Undo(steps) => Ok(vec![BaseAction::Undo(steps)]),
             Action::InsertCharAtCursor(ch) => Ok(vec![BaseAction::InsertUnderCursor(ch)]),
 
@@ -294,13 +360,18 @@ impl<Buff: TextBuffer> Editor<Buff> {
         };
         Ok(BaseAction::SetCursor(dest))
     }
-    fn jump_two_boundaries<F1, F2>(&self, direction: Direction, first_boundary: F1, second_boundary: F2) -> Result<BaseAction>
+    fn jump_two_boundaries<F1, F2>(
+        &self,
+        direction: Direction,
+        first_boundary: F1,
+        second_boundary: F2,
+    ) -> Result<BaseAction>
     where
         F1: Fn(char) -> bool,
         F2: Fn(char) -> bool,
     {
         let mut pos = self.cursor.pos;
-        
+
         // Avoid getting stuck if jump destination is directly on cursor
         if self.buffer.max_col(pos.line) > pos.col {
             pos.col += 1;
@@ -310,11 +381,11 @@ impl<Buff: TextBuffer> Editor<Buff> {
             Direction::Forward => {
                 let dest = self.buffer.find(&first_boundary, pos)?;
                 self.buffer.find(&second_boundary, dest)?
-            },
+            }
             Direction::Backward => {
                 let dest = self.buffer.rfind(&first_boundary, pos)?;
                 self.buffer.rfind(&second_boundary, dest)?
-            },
+            }
         };
 
         Ok(BaseAction::SetCursor(dest))
@@ -323,14 +394,14 @@ impl<Buff: TextBuffer> Editor<Buff> {
     fn add_action(&mut self, a: BaseAction) {
         self.action_queue.push_back(a)
     }
-
 }
 
 enum Direction {
     Forward,
-    Backward
+    Backward,
 }
 
+#[derive(Clone, Debug)]
 enum Action {
     Quit,
     Save,
@@ -393,6 +464,5 @@ enum Action {
     // Misc
     OpenFile,
 
-    Nothing
+    Nothing,
 }
-

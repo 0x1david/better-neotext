@@ -1,13 +1,12 @@
-use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 use crate::cursor::Cursor;
 pub(crate) use crate::error::{Error, Result};
-
-
+use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 
 pub trait Component {
     fn execute_action(&mut self, a: &BaseAction) -> Result<()>;
 }
 
+#[derive(Debug)]
 pub enum BaseAction {
     Save,
 
@@ -35,7 +34,7 @@ pub enum BaseAction {
     GetUnderCursor,
     OpenFile,
 
-    Nothing
+    Nothing,
 }
 
 pub trait Pattern {
@@ -218,10 +217,8 @@ impl Selection {
     }
 }
 
-
-
 /// Contains the main modal variants of the editor.
-#[derive(Default, Debug, PartialEq, Eq)]
+#[derive(Clone, Default, Debug, PartialEq, Eq)]
 pub enum Modal {
     #[default]
     Normal,
@@ -266,6 +263,7 @@ pub enum FindMode {
     Backwards,
 }
 
+#[derive(Clone, Debug)]
 pub enum Command {
     Find,
     Rfind,
