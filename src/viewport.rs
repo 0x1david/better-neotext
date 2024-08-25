@@ -1,5 +1,5 @@
 use std::io::{self, Stdout, Write};
-use crate::{cursor::Cursor, Component, Modal, Result, Selection};
+use crate::{cursor::Cursor, BaseAction, Component, Modal, Result, Selection};
 
 use crossterm::{execute, style::{Color, ResetColor, SetBackgroundColor, SetForegroundColor}, terminal::{self, ClearType, LeaveAlternateScreen}};
 
@@ -17,7 +17,7 @@ pub struct ViewPort {
 }
 
 impl Component for ViewPort {
-    fn execute_action(&mut self, a: &crate::Action) -> Result<()> {
+    fn execute_action(&mut self, a: &BaseAction) -> Result<()> {
         match a {
             _ => ()
         };

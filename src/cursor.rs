@@ -1,8 +1,7 @@
 use std::{cmp::Ordering, fmt::Display};
 
-use crate::{Component, Modal, Action, LineCol};
+use crate::{BaseAction, Component, LineCol, Modal};
 
-const JUMP_DIST: usize = 25;
 
 
 #[derive(Debug, Clone, Copy)]
@@ -45,23 +44,21 @@ impl From<&LineCol> for ShadowCursor {
     }
 }
 impl ShadowCursor {
-    pub fn update(&mut self, lc: &LineCol) {
+    pub fn update(&mut self, lc: LineCol) {
         self.line = lc.line as i64;
         self.col = lc.col as i64;
     }
 }
 
 impl Component for ShadowCursor {
-    fn execute_action(&mut self, a: &Action) -> crate::Result<()> {
+    fn execute_action(&mut self, a: &BaseAction) -> crate::Result<()> {
         match a {
-            Action::BumpUp => self.line += 1,
-            Action::BumpDown => self.line -= 1,
-            Action::BumpLeft => self.col -= 1,
-            Action::BumpRight=> self.col += 1,
-            Action::JumpUp => self.line += JUMP_DIST as i64,
-            Action::JumpDown => self.line -= JUMP_DIST as i64,
-            Action::SetCursor(lc) => {
-                self.update(lc)
+            BaseAction::MoveUp(dist)=> self.line += *dist as i64,
+            BaseAction::MoveDown(dist)=> self.line -= *dist as i64,
+            BaseAction::MoveLeft(dist) => self.col -= *dist as i64,
+            BaseAction::MoveRight(dist) => self.col += *dist as i64,
+            BaseAction::SetCursor(lc) => {
+                self.update(*lc)
             }
             _ => (),
         };
@@ -70,17 +67,13 @@ impl Component for ShadowCursor {
 }
 
 impl Component for Cursor {
-    fn execute_action(&mut self, a: &crate::Action) -> crate::Result<()> {
+    fn execute_action(&mut self, a: &BaseAction) -> crate::Result<()> {
         match a {
-            Action::BumpUp => self.bump_up(),
-            Action::BumpDown => self.bump_down(),
-            Action::BumpLeft => self.bump_left(),
-            Action::BumpRight=> self.bump_right(),
-            Action::JumpUp => self.jump_up(JUMP_DIST),
-            Action::JumpDown => self.jump_down(JUMP_DIST),
-            Action::JumpSOL => self.set_col(0),
-            Action::JumpSOF => self.set_line(0),
-            Action::SetCursor(lc) => self.go(lc),
+            BaseAction::MoveUp(dist) => self.move_up(dist),
+            BaseAction::MoveDown(dist) => self.move_down(dist),
+            BaseAction::MoveLeft(dist) => self.move_left(dist),
+            BaseAction::MoveRight(dist) => self.jump_right(dist),
+            BaseAction::SetCursor(lc) => self.go(lc),
             _ => (),
         };
         Ok(())
@@ -127,44 +120,9 @@ impl Cursor {
         self.pos.col = new;
     }
 
-    /// Moves the cursor one position to the left, if there's left to go to, otherwise remains in
-    /// place.
-    #[inline]
-    pub fn bump_left(&mut self) {
-        self.previous_pos = self.pos;
-        if self.col() != 0 {
-            self.pos.col -= 1;
-        }
-    }
-
-    /// Moves the cursor one position to the right, if there's right to go to, otherwise remains in
-    /// place.
-    #[inline]
-    pub fn bump_right(&mut self) {
-        self.previous_pos = self.pos;
-        self.pos.col += 1;
-    }
-
-    /// Moves the cursor one position up, if there's upper line to go to, otherwise remains in
-    /// place.
-    #[inline]
-    fn bump_up(&mut self) {
-        if self.line() != 0 {
-            self.pos.line -= 1;
-        }
-    }
-
-    /// Moves the cursor one position down, if there's lower line to go to, otherwise remains in
-    /// place.
-    #[inline]
-    fn bump_down(&mut self) {
-        self.previous_pos = self.pos;
-        self.pos.line += 1;
-    }
-
     /// Moves the cursor left by the specified distance, clamping at zero.
     #[inline]
-    fn jump_left(&mut self, dist: usize) {
+    fn move_left(&mut self, dist: &usize) {
         self.previous_pos = self.pos;
         let dest = self.col() - dist;
         self.set_col(dest)
@@ -172,15 +130,15 @@ impl Cursor {
 
     /// Moves the cursor right by the specified distance, clamping at the end of a row.
     #[inline]
-    fn jump_right(&mut self, dist: usize, max: usize) {
+    fn jump_right(&mut self, dist: &usize) {
         self.previous_pos = self.pos;
-        let dest = usize::max(self.col() + dist, max);
+        let dest = self.col() + dist;
         self.set_col(dest)
     }
 
     /// Moves the cursor up by the specified distance, clamping at the top.
     #[inline]
-    fn jump_up(&mut self, dist: usize) {
+    fn move_up(&mut self, dist: &usize) {
         self.previous_pos = self.pos;
         let dest = self.line() - dist;
         self.set_line(dest);
@@ -188,7 +146,7 @@ impl Cursor {
 
     /// Moves the cursor down by the specified distance, clamping at the bottom.
     #[inline]
-    fn jump_down(&mut self, dist: usize) {
+    fn move_down(&mut self, dist: &usize) {
         self.previous_pos = self.pos;
         let dest = self.line() + dist;
         self.set_line(dest)

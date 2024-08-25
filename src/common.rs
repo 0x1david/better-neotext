@@ -2,75 +2,40 @@ use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 use crate::cursor::Cursor;
 pub(crate) use crate::error::{Error, Result};
 
-pub enum Action {
-    Quit,
+
+
+pub trait Component {
+    fn execute_action(&mut self, a: &BaseAction) -> Result<()>;
+}
+
+pub enum BaseAction {
     Save,
 
-    // Cursor Movement
-    BumpUp,
-    BumpDown,
-    BumpLeft,
-    BumpRight,
-    JumpUp,
-    JumpDown,
+    MoveUp(usize),
+    MoveDown(usize),
+    MoveRight(usize),
+    MoveLeft(usize),
     SetCursor(LineCol),
-    JumpLetter(char),
-    ReverseJumpLetter(char),
-    JumpToNextWord,
-    JumpToNextSymbol,
-    ReverseJumpToNextWord,
-    ReverseJumpToNextSymbol,
-    JumpSOL,
-    JumpEOL,
-    JumpSOF,
-    JumpEOF,
 
-    // Mode Changes
     ChangeMode(Modal),
-    InsertModeEOL,
 
-    // Text Search
-    Find(Box<dyn Pattern>),
-    ReverseFind(Box<dyn Pattern>),
-    FindChar(char),
-    ReverseFindChar(char),
-
-    // Insertions
-
-    // Text Manipulation
-    Replace(char),
-    InsertCharAtCursor(char),
-    InsertNewline,
-    InsertBelow,
-    InsertTab,
-    DeleteBefore,
-    DeleteUnder,
-
-    // Clipboard Operations
     Yank,
     Paste(char),
-    PasteNewline(char),
-    PasteAbove(char),
 
-    // History Operations
-    FetchFromHistory(u8),
+    InsertUnderCursor(char),
+    DeleteUnderCursor,
+    DeleteCurrentLine,
 
-    // Command Execution
     ExecuteCommand(Command),
 
-    // Undo/Redo
     Undo(u8),
     Redo,
+    FetchFromHistory(u8),
 
-    // Misc
     GetUnderCursor,
     OpenFile,
 
     Nothing
-}
-
-pub trait Component {
-    fn execute_action(&mut self, a: &Action) -> Result<()>;
 }
 
 pub trait Pattern {
