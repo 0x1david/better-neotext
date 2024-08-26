@@ -23,6 +23,12 @@ pub struct Editor<Buff: TextBuffer> {
     extensions: Vec<Box<dyn Component>>,
 }
 
+macro_rules! ok_vec{
+    ($($expr:expr),* $(,)?) => {
+        Ok(vec![$($expr),*])
+    }
+}
+
 impl<Buff: TextBuffer> Editor<Buff> {
     pub fn new(buff: Buff, without_target: bool) -> Self {
         Self {
@@ -226,54 +232,54 @@ impl<Buff: TextBuffer> Editor<Buff> {
     fn resolve_action(&self, api_action: Action) -> Result<Vec<BaseAction>> {
         match api_action {
             // No-op and exit actions
-            Action::Nothing => Ok(vec![]),
+            Action::Nothing => ok_vec!(),
             Action::Quit => Err(Error::ExitCall),
 
             // Basic cursor movements
-            Action::BumpUp => Ok(vec![BaseAction::MoveUp(1)]),
-            Action::BumpDown => Ok(vec![BaseAction::MoveDown(1)]),
-            Action::BumpLeft => Ok(vec![BaseAction::MoveLeft(1)]),
-            Action::BumpRight => Ok(vec![BaseAction::MoveRight(1)]),
+            Action::BumpUp => ok_vec![BaseAction::MoveUp(1)],
+            Action::BumpDown => ok_vec![BaseAction::MoveDown(1)],
+            Action::BumpLeft => ok_vec![BaseAction::MoveLeft(1)],
+            Action::BumpRight => ok_vec![BaseAction::MoveRight(1)],
 
             // Larger cursor movements
-            Action::JumpUp => Ok(vec![BaseAction::MoveUp(JUMP_DIST)]),
-            Action::JumpDown => Ok(vec![BaseAction::MoveDown(JUMP_DIST)]),
-            Action::JumpSOL => Ok(vec![BaseAction::MoveLeft(self.cursor.col())]),
-            Action::JumpEOL => Ok(vec![BaseAction::MoveRight(
+            Action::JumpUp => ok_vec![BaseAction::MoveUp(JUMP_DIST)],
+            Action::JumpDown => ok_vec![BaseAction::MoveDown(JUMP_DIST)],
+            Action::JumpSOL => ok_vec![BaseAction::MoveLeft(self.cursor.col())],
+            Action::JumpEOL => ok_vec![BaseAction::MoveRight(
                 self.buffer.max_col(self.cursor.line()) - self.cursor.col(),
-            )]),
-            Action::JumpSOF => Ok(vec![BaseAction::MoveUp(self.cursor.line())]),
-            Action::JumpEOF => Ok(vec![BaseAction::MoveDown(self.buffer.max_line())]),
+            )],
+            Action::JumpSOF => ok_vec![BaseAction::MoveUp(self.cursor.line())],
+            Action::JumpEOF => ok_vec![BaseAction::MoveDown(self.buffer.max_line())],
 
             // Word and symbol navigation
-            Action::JumpToNextWord => Ok(vec![self.jump_two_boundaries(
+            Action::JumpToNextWord => ok_vec![self.jump_two_boundaries(
                 Direction::Forward,
                 char::is_whitespace,
                 |ch| !ch.is_whitespace(),
-            )?]),
-            Action::JumpToNextSymbol => Ok(vec![self.jump_two_boundaries(
+            )?],
+            Action::JumpToNextSymbol => ok_vec![self.jump_two_boundaries(
                 Direction::Forward,
                 |ch| !ch.is_whitespace(),
                 |ch| !ch.is_whitespace(),
-            )?]),
-            Action::ReverseJumpToNextWord => Ok(vec![self.jump_two_boundaries(
+            )?],
+            Action::ReverseJumpToNextWord => ok_vec![self.jump_two_boundaries(
                 Direction::Backward,
                 char::is_whitespace,
                 |ch| !ch.is_whitespace(),
-            )?]),
-            Action::ReverseJumpToNextSymbol => Ok(vec![self.jump_two_boundaries(
+            )?],
+            Action::ReverseJumpToNextSymbol => ok_vec![self.jump_two_boundaries(
                 Direction::Backward,
                 |ch| !ch.is_whitespace(),
                 |ch| !ch.is_whitespace(),
-            )?]),
+            )?],
 
             // Find and search actions
-            Action::Find(pat) => Ok(vec![
+            Action::Find(pat) => ok_vec![
                 self.resolve_find(|p, pos| self.buffer.find(p, pos), pat)?
-            ]),
-            Action::ReverseFind(pat) => Ok(vec![
+            ],
+            Action::ReverseFind(pat) => ok_vec![
                 self.resolve_find(|p, pos| self.buffer.rfind(p, pos), pat)?
-            ]),
+            ],
             Action::FindChar(ch) => self.resolve_action(Action::Find(ch.to_string())),
             Action::ReverseFindChar(ch) => self.resolve_action(Action::ReverseFind(ch.to_string())),
             Action::ToChar(ch) => {
@@ -288,59 +294,59 @@ impl<Buff: TextBuffer> Editor<Buff> {
             }
 
             // Mode change actions
-            Action::ChangeMode(mode) => Ok(vec![BaseAction::ChangeMode(mode)]),
+            Action::ChangeMode(mode) => ok_vec![BaseAction::ChangeMode(mode)],
             Action::InsertModeEOL => {
                 let dist = self.buffer.max_col(self.cursor.line()) - self.cursor.col();
-                Ok(vec![
+                ok_vec![
                     BaseAction::MoveRight(dist),
                     BaseAction::ChangeMode(Modal::Insert),
-                ])
+                ]
             }
-            Action::InsertModeBelow => Ok(vec![
+            Action::InsertModeBelow => ok_vec![
                 BaseAction::MoveDown(1),
                 BaseAction::ChangeMode(Modal::Insert),
-            ]),
-            Action::InsertModeAbove => Ok(vec![
+            ],
+            Action::InsertModeAbove => ok_vec![
                 BaseAction::MoveUp(1),
                 BaseAction::ChangeMode(Modal::Insert),
-            ]),
+            ],
 
             // Edit actions
-            Action::Save => Ok(vec![BaseAction::Save]),
-            Action::Yank => Ok(vec![BaseAction::Yank]),
-            Action::Redo => Ok(vec![BaseAction::Redo]),
-            Action::DeleteUnder => Ok(vec![
+            Action::Save => ok_vec![BaseAction::Save],
+            Action::Yank => ok_vec![BaseAction::Yank],
+            Action::Redo => ok_vec![BaseAction::Redo],
+            Action::DeleteUnder => ok_vec![
                 BaseAction::MoveDown(1),
                 BaseAction::DeleteCurrentLine,
                 BaseAction::MoveUp(1),
-            ]),
-            Action::Replace(char) => Ok(vec![
+            ],
+            Action::Replace(char) => ok_vec![
                 BaseAction::DeleteUnderCursor,
                 BaseAction::InsertUnderCursor(char),
-            ]),
+            ],
             Action::DeleteBefore => {
-                Ok(vec![BaseAction::MoveLeft(1), BaseAction::DeleteUnderCursor])
+                ok_vec![BaseAction::MoveLeft(1), BaseAction::DeleteUnderCursor]
             }
-            Action::Undo(steps) => Ok(vec![BaseAction::Undo(steps)]),
-            Action::InsertCharAtCursor(ch) => Ok(vec![BaseAction::InsertUnderCursor(ch)]),
+            Action::Undo(steps) => ok_vec![BaseAction::Undo(steps)],
+            Action::InsertCharAtCursor(ch) => ok_vec![BaseAction::InsertUnderCursor(ch)],
 
             // Paste actions
-            Action::Paste(reg) => Ok(vec![BaseAction::Paste(reg)]),
-            Action::PasteAbove(reg) => Ok(vec![BaseAction::Paste(reg)]),
-            Action::PasteNewline(reg) => Ok(vec![BaseAction::MoveDown(1), BaseAction::Paste(reg)]),
+            Action::Paste(reg) => ok_vec![BaseAction::Paste(reg)],
+            Action::PasteAbove(reg) => ok_vec![BaseAction::Paste(reg)],
+            Action::PasteNewline(reg) => ok_vec![BaseAction::MoveDown(1), BaseAction::Paste(reg)],
 
             // Miscellaneous actions
-            Action::OpenFile => Ok(vec![BaseAction::OpenFile]),
-            Action::InsertTab => Ok(vec![]), // Currently not implemented
+            Action::OpenFile => ok_vec![BaseAction::OpenFile],
+            Action::InsertTab => ok_vec![], // Currently not implementd
             Action::ExecuteCommand(_command) => unimplemented!(),
-            Action::FetchFromHistory(idx) => Ok(vec![BaseAction::FetchFromHistory(idx)]),
+            Action::FetchFromHistory(idx) => ok_vec![BaseAction::FetchFromHistory(idx)],
         }
     }
     /// Resolves the input action and adds corresponding BaseActions to the queue
     fn add_to_action_queue(&mut self, api_action: Action) -> Result<()> {
         let base_actions = self.resolve_action(api_action)?;
         for action in base_actions {
-            self.add_action(action);
+            self.action_queue.push_back(action)
         }
         Ok(())
     }
@@ -389,10 +395,6 @@ impl<Buff: TextBuffer> Editor<Buff> {
         };
 
         Ok(BaseAction::SetCursor(dest))
-    }
-    #[inline]
-    fn add_action(&mut self, a: BaseAction) {
-        self.action_queue.push_back(a)
     }
 }
 
@@ -466,3 +468,4 @@ enum Action {
 
     Nothing,
 }
+
