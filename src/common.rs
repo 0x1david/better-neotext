@@ -19,22 +19,46 @@ pub enum BaseAction {
     ChangeMode(Modal),
 
     Yank,
-    Paste(char),
+    Paste(char, usize),
 
     InsertUnderCursor(char),
-    DeleteUnderCursor,
-    DeleteCurrentLine,
+    DeleteUnderCursor(usize),
+    DeleteCurrentLine(usize),
 
     ExecuteCommand(Command),
 
-    Undo(u8),
-    Redo,
-    FetchFromHistory(u8),
+    Undo(usize),
+    Redo(usize),
+    FetchFromHistory,
 
     GetUnderCursor,
     OpenFile,
 
     Nothing,
+}
+impl BaseAction {
+    /// Multiply the repeat factor of an action by x
+    pub fn repeat(mut self, x: usize) -> Self {
+        if let Some(n) = self.get_repeater() {
+            *n *= x;
+        };
+        self
+    }
+    /// Get the number of times an action is being repeated (if repeatable)
+    fn get_repeater(&mut self) -> Option<&mut usize> {
+        match self {
+            Self::MoveUp(n)
+            | Self::MoveDown(n)
+            | Self::MoveLeft(n)
+            | Self::MoveRight(n)
+            | Self::Undo(n)
+            | Self::Redo(n)
+            | Self::DeleteUnderCursor(n)
+            | Self::DeleteCurrentLine(n) => Some(n),
+            Self::Paste(_, n) => Some(n),
+            _ => None,
+        }
+    }
 }
 
 pub trait Pattern {

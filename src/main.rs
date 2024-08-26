@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables)]
 mod buffer;
 mod common;
 mod cursor;
@@ -6,6 +7,7 @@ mod error;
 mod viewport;
 use buffer::VecBuffer;
 pub use common::*;
+
 
 fn main() {
     let mut instance = editor::Editor::new(VecBuffer::new(vec![" ".to_string()]), false);

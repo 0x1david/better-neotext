@@ -1,5 +1,3 @@
-use std::{cmp::Ordering, fmt::Display};
-
 use crate::{BaseAction, Component, LineCol, Modal};
 
 #[derive(Debug, Clone, Copy)]

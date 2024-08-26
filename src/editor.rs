@@ -37,7 +37,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
             modal: Modal::Normal,
             action_history: Vec::new(),
             action_queue: VecDeque::new(),
-            repeat_action: 0,
+            repeat_action: 1,
             previous_key: None,
             cursor: Cursor::default(),
             extensions: Vec::new(),
@@ -274,12 +274,12 @@ impl<Buff: TextBuffer> Editor<Buff> {
             )?],
 
             // Find and search actions
-            Action::Find(pat) => ok_vec![
-                self.resolve_find(|p, pos| self.buffer.find(p, pos), pat)?
-            ],
-            Action::ReverseFind(pat) => ok_vec![
-                self.resolve_find(|p, pos| self.buffer.rfind(p, pos), pat)?
-            ],
+            Action::Find(pat) => {
+                ok_vec![self.resolve_find(|p, pos| self.buffer.find(p, pos), pat)?]
+            }
+            Action::ReverseFind(pat) => {
+                ok_vec![self.resolve_find(|p, pos| self.buffer.rfind(p, pos), pat)?]
+            }
             Action::FindChar(ch) => self.resolve_action(Action::Find(ch.to_string())),
             Action::ReverseFindChar(ch) => self.resolve_action(Action::ReverseFind(ch.to_string())),
             Action::ToChar(ch) => {
@@ -306,45 +306,54 @@ impl<Buff: TextBuffer> Editor<Buff> {
                 BaseAction::MoveDown(1),
                 BaseAction::ChangeMode(Modal::Insert),
             ],
-            Action::InsertModeAbove => ok_vec![
-                BaseAction::MoveUp(1),
-                BaseAction::ChangeMode(Modal::Insert),
-            ],
+            Action::InsertModeAbove => {
+                ok_vec![BaseAction::MoveUp(1), BaseAction::ChangeMode(Modal::Insert),]
+            }
 
             // Edit actions
             Action::Save => ok_vec![BaseAction::Save],
             Action::Yank => ok_vec![BaseAction::Yank],
-            Action::Redo => ok_vec![BaseAction::Redo],
+            Action::Redo => ok_vec![BaseAction::Redo(1)],
             Action::DeleteUnder => ok_vec![
                 BaseAction::MoveDown(1),
-                BaseAction::DeleteCurrentLine,
+                BaseAction::DeleteCurrentLine(1),
                 BaseAction::MoveUp(1),
             ],
             Action::Replace(char) => ok_vec![
-                BaseAction::DeleteUnderCursor,
+                BaseAction::DeleteUnderCursor(1),
                 BaseAction::InsertUnderCursor(char),
             ],
             Action::DeleteBefore => {
-                ok_vec![BaseAction::MoveLeft(1), BaseAction::DeleteUnderCursor]
+                ok_vec![BaseAction::MoveLeft(1), BaseAction::DeleteUnderCursor(1)]
             }
-            Action::Undo(steps) => ok_vec![BaseAction::Undo(steps)],
+            Action::Undo(steps) => ok_vec![BaseAction::Undo(steps.into())],
             Action::InsertCharAtCursor(ch) => ok_vec![BaseAction::InsertUnderCursor(ch)],
 
             // Paste actions
-            Action::Paste(reg) => ok_vec![BaseAction::Paste(reg)],
-            Action::PasteAbove(reg) => ok_vec![BaseAction::Paste(reg)],
-            Action::PasteNewline(reg) => ok_vec![BaseAction::MoveDown(1), BaseAction::Paste(reg)],
+            Action::Paste(reg) => ok_vec![BaseAction::Paste(reg, 1)],
+            Action::PasteAbove(reg) => ok_vec![BaseAction::Paste(reg, 1)],
+            Action::PasteNewline(reg) => ok_vec![BaseAction::MoveDown(1), BaseAction::Paste(reg, 1)],
 
             // Miscellaneous actions
             Action::OpenFile => ok_vec![BaseAction::OpenFile],
             Action::InsertTab => ok_vec![], // Currently not implementd
             Action::ExecuteCommand(_command) => unimplemented!(),
-            Action::FetchFromHistory(idx) => ok_vec![BaseAction::FetchFromHistory(idx)],
+            Action::FetchFromHistory => ok_vec![BaseAction::FetchFromHistory],
         }
     }
     /// Resolves the input action and adds corresponding BaseActions to the queue
     fn add_to_action_queue(&mut self, api_action: Action) -> Result<()> {
-        let base_actions = self.resolve_action(api_action)?;
+        let mut base_actions = self.resolve_action(api_action)?;
+
+        // If repeatable
+        if base_actions.len() == 1 && self.repeat_action != 1 {
+            let a = base_actions
+                .pop()
+                .expect("Checked for len one line prior")
+                .repeat(self.repeat_action);
+            self.action_queue.push_back(a);
+        }
+
         for action in base_actions {
             self.action_queue.push_back(action)
         }
@@ -454,7 +463,7 @@ enum Action {
     PasteAbove(char),
 
     // History Operations
-    FetchFromHistory(u8),
+    FetchFromHistory,
 
     // Command Execution
     ExecuteCommand(Command),
@@ -468,4 +477,3 @@ enum Action {
 
     Nothing,
 }
-
