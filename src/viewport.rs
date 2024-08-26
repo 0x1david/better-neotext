@@ -11,6 +11,7 @@ const NO_OF_BARS: u8 = 2;
 pub const LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS: usize = 4;
 pub const LINE_NUMBER_RESERVED_COLUMNS: usize = 5;
 
+#[derive(Debug)]
 pub struct ViewPort {
     terminal: Stdout,
     width: u16,

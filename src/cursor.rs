@@ -1,3 +1,5 @@
+use tracing::info;
+
 use crate::{BaseAction, Component, LineCol, Modal};
 
 #[derive(Debug, Clone, Copy)]
@@ -28,6 +30,7 @@ pub struct Cursor {
     pub last_text_mode_pos: LineCol,
 }
 
+#[derive(Debug)]
 pub struct ShadowCursor {
     pub line: i64,
     pub col: i64,
@@ -50,7 +53,7 @@ impl ShadowCursor {
 
 impl Component for ShadowCursor {
     fn execute_action(&mut self, a: &BaseAction) -> crate::Result<()> {
-        println!("Executing Action at ShadowCursor: {:?}", a);
+        info!("Executing Action at ShadowCursor: {:?}", a);
         match a {
             BaseAction::MoveUp(dist) => self.line += *dist as i64,
             BaseAction::MoveDown(dist) => self.line -= *dist as i64,
@@ -65,7 +68,7 @@ impl Component for ShadowCursor {
 
 impl Component for Cursor {
     fn execute_action(&mut self, a: &BaseAction) -> crate::Result<()> {
-        println!("Executing Action at cursor: {:?}", a);
+        info!("Executing Action at Cursor: {:?}", a);
         match a {
             BaseAction::MoveUp(dist) => self.move_up(dist),
             BaseAction::MoveDown(dist) => self.move_down(dist),

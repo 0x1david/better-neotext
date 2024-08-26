@@ -7,9 +7,30 @@ mod error;
 mod viewport;
 use buffer::VecBuffer;
 pub use common::*;
-
+pub use tracing::{error, info, span, warn, Instrument};
+pub use tracing_subscriber::{filter::EnvFilter, prelude::*};
+pub use tracing_tree::HierarchicalLayer;
 
 fn main() {
+    setup_tracing();
     let mut instance = editor::Editor::new(VecBuffer::new(vec![" ".to_string()]), false);
-    instance.run_event_loop().unwrap();
+    match instance.run_event_loop() {
+        Err(Error::ExitCall) => info!("Quitting due to ExitCall"),
+        _ => error!("Unexpected end to our journey"),
+    }
+}
+
+fn setup_tracing() {
+    let filter = EnvFilter::try_new("info, your_crate_name = trace, crossterm = off")
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+
+    tracing_subscriber::registry()
+        .with(
+            HierarchicalLayer::new(2)
+                .with_writer(std::io::stderr)
+                .with_targets(true)
+                .with_bracketed_fields(true),
+        )
+        .with(filter)
+        .init();
 }

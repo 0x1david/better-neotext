@@ -1,6 +1,10 @@
 use crate::cursor::Cursor;
 pub(crate) use crate::error::{Error, Result};
-use std::{borrow::Cow, cmp::Ordering, fmt::Display};
+use std::{
+    borrow::Cow,
+    cmp::Ordering,
+    fmt::{Debug, Display},
+};
 
 pub trait Component {
     fn execute_action(&mut self, a: &BaseAction) -> Result<()>;

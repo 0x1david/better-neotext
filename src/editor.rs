@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, fmt::Debug};
 
 use crate::{
     buffer::TextBuffer,
@@ -7,8 +7,15 @@ use crate::{
     BaseAction, Command, Component, Error, FindMode, LineCol, Modal, Pattern, Result,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
+use tracing::{instrument, span, warn, Level};
 
 const JUMP_DIST: usize = 25;
+
+impl<Buff: TextBuffer> Debug for Editor<Buff> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Editor")
+    }
+}
 
 pub struct Editor<Buff: TextBuffer> {
     buffer: Buff,
@@ -45,6 +52,8 @@ impl<Buff: TextBuffer> Editor<Buff> {
         }
     }
     pub fn run_event_loop(&mut self) -> Result<()> {
+        let span = span!(Level::INFO, "event_loop");
+        let _guard = span.enter();
         loop {
             self.viewport
                 .update_viewport(self.buffer.get_entire_text(), &self.cursor)?;
@@ -62,7 +71,6 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
                 self.shadow_cursor.update(self.cursor.pos)
             }
-            return Ok(());
         }
     }
     fn consume_action_queue(&mut self) -> Result<()> {
@@ -102,6 +110,8 @@ impl<Buff: TextBuffer> Editor<Buff> {
                 (KeyCode::Home, KeyModifiers::NONE) => Action::JumpSOL,
                 (KeyCode::Char('$'), KeyModifiers::NONE) => Action::JumpEOL,
                 (KeyCode::End, KeyModifiers::NONE) => Action::JumpEOL,
+                (KeyCode::Esc, KeyModifiers::NONE) => return Err(Error::ExitCall), // TODO: Remove after
+                // debugging finished
                 (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF,
                 (KeyCode::Char('G'), KeyModifiers::NONE) => Action::JumpEOF,
 
@@ -161,6 +171,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
         Ok(action)
     }
     // Decides on how to delegate a given base action
+    #[instrument]
     fn perform_action(&mut self, action: BaseAction) -> Result<()> {
         println!("Performing Action: {:?}", action);
         match action {
@@ -172,6 +183,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
             _ => Ok(()),
         }
     }
+    #[instrument]
     fn delegate_action(&mut self, action: &BaseAction) -> Result<()> {
         println!("Delegating Action: {:?}", action);
         self.cursor.execute_action(action)?;
@@ -184,6 +196,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
     }
     /// Ensures a movement Action fits within bounds, if it doesnt the action is changed to a
     /// bounded version
+    #[instrument]
     fn delegate_action_bound_checked(&mut self, action: &BaseAction) -> Result<()> {
         self.shadow_cursor.execute_action(action)?;
 
@@ -191,6 +204,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
         // Line bound checking
         if self.shadow_cursor.line > self.buffer.max_line() as i64 {
+            warn!("Exceeding maximum line, altering action...");
             self.shadow_cursor.line = self.cursor.pos.line as i64;
             let actions = self.resolve_action(Action::JumpEOF)?;
             for a in actions {
@@ -198,6 +212,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
             }
             altered = true;
         } else if self.shadow_cursor.line < 0 {
+            warn!("Exceeding minimum line, altering action...");
             self.shadow_cursor.line = self.cursor.pos.line as i64;
             let actions = self.resolve_action(Action::JumpSOF)?;
             for a in actions {
@@ -208,6 +223,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
         // Col bound checking
         if self.shadow_cursor.col > self.buffer.max_col(self.shadow_cursor.line as usize) as i64 {
+            warn!("Exceeding maximum col, altering action...");
             self.shadow_cursor.col = self.cursor.pos.col as i64;
             let actions = self.resolve_action(Action::JumpEOL)?;
             for a in actions {
@@ -215,6 +231,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
             }
             altered = true;
         } else if self.shadow_cursor.col < 0 {
+            warn!("Exceeding minimum col, altering action...");
             self.shadow_cursor.col = self.cursor.pos.col as i64;
             let actions = self.resolve_action(Action::JumpSOL)?;
             for a in actions {
@@ -224,6 +241,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
         }
 
         if !altered {
+            warn!("executing unaltered action...");
             self.delegate_action(action)?
         };
 
@@ -332,7 +350,9 @@ impl<Buff: TextBuffer> Editor<Buff> {
             // Paste actions
             Action::Paste(reg) => ok_vec![BaseAction::Paste(reg, 1)],
             Action::PasteAbove(reg) => ok_vec![BaseAction::Paste(reg, 1)],
-            Action::PasteNewline(reg) => ok_vec![BaseAction::MoveDown(1), BaseAction::Paste(reg, 1)],
+            Action::PasteNewline(reg) => {
+                ok_vec![BaseAction::MoveDown(1), BaseAction::Paste(reg, 1)]
+            }
 
             // Miscellaneous actions
             Action::OpenFile => ok_vec![BaseAction::OpenFile],
@@ -342,6 +362,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
         }
     }
     /// Resolves the input action and adds corresponding BaseActions to the queue
+    #[instrument]
     fn add_to_action_queue(&mut self, api_action: Action) -> Result<()> {
         let mut base_actions = self.resolve_action(api_action)?;
 
