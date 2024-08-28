@@ -1,4 +1,5 @@
 #![allow(dead_code, unused_variables)]
+mod bars;
 mod buffer;
 mod common;
 mod cursor;
@@ -8,7 +9,8 @@ mod viewport;
 use buffer::VecBuffer;
 pub use common::*;
 pub use tracing::{error, info, span, warn, Instrument};
-pub use tracing_subscriber::{filter::EnvFilter, prelude::*};
+use tracing_subscriber::layer::SubscriberExt;
+pub use tracing_subscriber::{filter::EnvFilter, prelude::*, Layer};
 pub use tracing_tree::HierarchicalLayer;
 
 fn main() {

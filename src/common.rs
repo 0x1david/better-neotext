@@ -257,6 +257,21 @@ pub enum Modal {
     Command,
 }
 
+impl Display for Modal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let repr = match self {
+            Self::Insert => "INSERT",
+            Self::Visual => "VISUAL",
+            Self::VisualLine => "VISUAL_LINE",
+            Self::Command => "COMMAND",
+            Self::Normal => "NORMAL",
+            Self::Find(FindMode::Forwards) => "FW_FIND",
+            Self::Find(FindMode::Backwards) => "BW_FIND",
+        };
+        write!(f, "{}", repr)
+    }
+}
+
 impl Modal {
     pub fn is_normal(&self) -> bool {
         matches!(&self, Modal::Normal)
