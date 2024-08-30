@@ -1,5 +1,5 @@
-use crate::cursor::Cursor;
 pub(crate) use crate::error::{Error, Result};
+use crate::{cursor::Cursor, editor::Lazy};
 use std::{
     borrow::Cow,
     cmp::Ordering,
@@ -10,7 +10,7 @@ pub trait Component {
     fn execute_action(&mut self, a: &BaseAction) -> Result<()>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum BaseAction {
     Save,
 
@@ -25,8 +25,8 @@ pub enum BaseAction {
     Yank,
     Paste(char, usize),
 
-    InsertUnderCursor(char),
-    DeleteUnderCursor(usize),
+    InsertAt(char, Lazy<LineCol>),
+    DeleteAt(usize, Lazy<LineCol>),
     DeleteCurrentLine(usize),
 
     ExecuteCommand(Command),
@@ -57,7 +57,7 @@ impl BaseAction {
             | Self::MoveRight(n)
             | Self::Undo(n)
             | Self::Redo(n)
-            | Self::DeleteUnderCursor(n)
+            | Self::DeleteAt(n, _)
             | Self::DeleteCurrentLine(n) => Some(n),
             Self::Paste(_, n) => Some(n),
             _ => None,

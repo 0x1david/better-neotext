@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, fmt::Debug};
+use std::{borrow::Cow, collections::VecDeque, fmt::Debug};
 
 use crate::{
     buffer::TextBuffer,
@@ -7,7 +7,7 @@ use crate::{
     BaseAction, Command, Component, Error, FindMode, LineCol, Modal, Pattern, Result,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use tracing::{instrument, span, warn, Level};
+use tracing::{info, instrument, span, warn, Level};
 
 const JUMP_DIST: usize = 25;
 
@@ -180,12 +180,35 @@ impl<Buff: TextBuffer> Editor<Buff> {
             | BaseAction::MoveLeft(_)
             | BaseAction::MoveRight(_)
             | BaseAction::SetCursor(_) => self.delegate_action_bound_checked(&action),
-            _ => Ok(()),
+            otherwise => self.delegate_action(&otherwise),
+        }
+    }
+
+    // Compute the lazy values of BaseActions
+    fn compute_lazy_values<'a>(&self, a: &'a BaseAction) -> Cow<'a, BaseAction> {
+        match a {
+            action @ BaseAction::InsertAt(i, lazy) => {
+                if lazy.is_evaluated() {
+                    Cow::Borrowed(action)
+                } else {
+                    Cow::Owned(BaseAction::InsertAt(*i, Lazy::with_inner(self.cursor.pos)))
+                }
+            }
+            action @ BaseAction::DeleteAt(i, lazy) => {
+                if lazy.is_evaluated() {
+                    Cow::Borrowed(action)
+                } else {
+                    Cow::Owned(BaseAction::DeleteAt(*i, Lazy::with_inner(self.cursor.pos)))
+                }
+            }
+            otherwise => Cow::Borrowed(otherwise),
         }
     }
     #[instrument]
     fn delegate_action(&mut self, action: &BaseAction) -> Result<()> {
-        println!("Delegating Action: {:?}", action);
+        let action = &self.compute_lazy_values(action);
+
+        info!("Delegating Action: {:?}", action);
         self.cursor.execute_action(action)?;
         self.viewport.execute_action(action)?;
         self.shadow_cursor.execute_action(action)?;
@@ -337,15 +360,20 @@ impl<Buff: TextBuffer> Editor<Buff> {
                 BaseAction::DeleteCurrentLine(1),
                 BaseAction::MoveUp(1),
             ],
-            Action::Replace(char) => ok_vec![
-                BaseAction::DeleteUnderCursor(1),
-                BaseAction::InsertUnderCursor(char),
-            ],
+            Action::Replace(char) => {
+                ok_vec![
+                    BaseAction::DeleteAt(1, Lazy::new()),
+                    BaseAction::InsertAt(char, Lazy::new()),
+                ]
+            }
             Action::DeleteBefore => {
-                ok_vec![BaseAction::MoveLeft(1), BaseAction::DeleteUnderCursor(1)]
+                ok_vec![
+                    BaseAction::MoveLeft(1),
+                    BaseAction::DeleteAt(1, Lazy::new())
+                ]
             }
             Action::Undo(steps) => ok_vec![BaseAction::Undo(steps.into())],
-            Action::InsertCharAtCursor(ch) => ok_vec![BaseAction::InsertUnderCursor(ch)],
+            Action::InsertCharAtCursor(ch) => ok_vec![BaseAction::InsertAt(ch, Lazy::new())],
 
             // Paste actions
             Action::Paste(reg) => ok_vec![BaseAction::Paste(reg, 1)],
@@ -497,4 +525,26 @@ enum Action {
     OpenFile,
 
     Nothing,
+}
+
+#[derive(Debug, Clone)]
+pub struct Lazy<T> {
+    inner: Option<T>,
+}
+impl<T> Lazy<T> {
+    pub fn new() -> Self {
+        Lazy { inner: None }
+    }
+    pub fn as_inner(self) -> Option<T> {
+        self.inner
+    }
+    pub fn with_inner(v: T) -> Self {
+        Lazy { inner: Some(v) }
+    }
+    pub fn set_inner(&mut self, v: T) {
+        self.inner = Some(v)
+    }
+    pub fn is_evaluated(&self) -> bool {
+        self.inner.is_some()
+    }
 }
