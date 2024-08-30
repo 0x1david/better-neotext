@@ -1,4 +1,8 @@
-use std::{collections::VecDeque, fmt::Debug};
+use std::{
+    collections::VecDeque,
+    fmt::{Debug, Display},
+    marker::PhantomData,
+};
 
 use crate::{
     buffer::TextBuffer,
@@ -338,14 +342,19 @@ impl<Buff: TextBuffer> Editor<Buff> {
                 BaseAction::MoveUp(1),
             ],
             Action::Replace(char) => ok_vec![
-                BaseAction::DeleteUnderCursor(1),
-                BaseAction::InsertUnderCursor(char),
+                BaseAction::DeleteAt(1, LineCol::postpone()),
+                BaseAction::InsertAt(char, LineCol::postpone()),
             ],
             Action::DeleteBefore => {
-                ok_vec![BaseAction::MoveLeft(1), BaseAction::DeleteUnderCursor(1)]
+                ok_vec![
+                    BaseAction::MoveLeft(1),
+                    BaseAction::DeleteAt(1, LineCol::postpone())
+                ]
             }
             Action::Undo(steps) => ok_vec![BaseAction::Undo(steps.into())],
-            Action::InsertCharAtCursor(ch) => ok_vec![BaseAction::InsertUnderCursor(ch)],
+            Action::InsertCharAtCursor(ch) => {
+                ok_vec![BaseAction::InsertAt(ch, LineCol::postpone())]
+            }
 
             // Paste actions
             Action::Paste(reg) => ok_vec![BaseAction::Paste(reg, 1)],
@@ -497,4 +506,37 @@ enum Action {
     OpenFile,
 
     Nothing,
+}
+
+trait Postponable: Sized {
+    fn postpone() -> Postponed<Self> {
+        Postponed { item: None }
+    }
+}
+impl Postponable for LineCol {}
+
+pub struct Postponed<T> {
+    item: Option<T>,
+}
+impl<T> Postponed<T> {
+    pub fn resolve(&mut self, f: impl FnOnce() -> T) {
+        self.item = Some(f())
+    }
+    pub fn get(self) -> Result<T> {
+        match self.item {
+            Some(i) => Ok(i),
+            None => Err(Error::ProgrammingBug {
+                descr: "Called get on a Postponable before ever resolving".to_string(),
+            }),
+        }
+    }
+}
+
+impl<T: Debug> Debug for Postponed<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self.item {
+            Some(v) => write!(f, "Postponed::<{:?}>", v),
+            None => write!(f, "Postponed::Unresolved"),
+        }
+    }
 }

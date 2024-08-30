@@ -1,5 +1,5 @@
-use crate::cursor::Cursor;
 pub(crate) use crate::error::{Error, Result};
+use crate::{cursor::Cursor, editor::Postponed};
 use std::{
     borrow::Cow,
     cmp::Ordering,
@@ -25,8 +25,8 @@ pub enum BaseAction {
     Yank,
     Paste(char, usize),
 
-    InsertUnderCursor(char),
-    DeleteUnderCursor(usize),
+    InsertAt(char, Postponed<LineCol>),
+    DeleteAt(usize, Postponed<LineCol>),
     DeleteCurrentLine(usize),
 
     ExecuteCommand(Command),
@@ -57,7 +57,7 @@ impl BaseAction {
             | Self::MoveRight(n)
             | Self::Undo(n)
             | Self::Redo(n)
-            | Self::DeleteUnderCursor(n)
+            | Self::DeleteAt(n, _)
             | Self::DeleteCurrentLine(n) => Some(n),
             Self::Paste(_, n) => Some(n),
             _ => None,

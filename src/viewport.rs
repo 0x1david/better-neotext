@@ -28,6 +28,7 @@ impl Component for ViewPort {
         match a {
             BaseAction::MoveUp(dist) => self.move_up(*dist),
             BaseAction::MoveDown(dist) => self.move_down(*dist),
+            BaseAction::ChangeMode(mode) => self.change_mode(mode),
             _ => (),
         };
         Ok(())
@@ -42,6 +43,9 @@ impl ViewPort {
     fn move_down(&mut self, dist: usize) {
         self.top_border += dist;
         self.bottom_border += dist;
+    }
+    fn change_mode(&mut self, mode: &Modal) {
+        self.mode = mode.clone()
     }
 }
 

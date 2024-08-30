@@ -1,6 +1,13 @@
-use crate::{Error, LineCol, Modal, Pattern, Result};
-use std::collections::VecDeque;
+use crate::{Component, Error, LineCol, Modal, Pattern, Result};
+use std::{any::Any, collections::VecDeque};
 
+// impl<Buf: TextBuffer + Any> Component for Buf {
+//     fn execute_action(&mut self, a: &crate::BaseAction) -> Result<()> {
+//         match a {
+//             crate::BaseAction::InsertAt(, )
+//         }
+//     }
+// }
 /// Trait defining the interface for a text buffer
 #[allow(clippy::module_name_repetitions)]
 pub trait TextBuffer {
