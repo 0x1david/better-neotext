@@ -1,4 +1,4 @@
-use crate::{Error, LineCol, Modal, Pattern, Result};
+use crate::{BaseAction, Component, Error, LineCol, Modal, Pattern, Result};
 use std::collections::VecDeque;
 
 /// Trait defining the interface for a text buffer
@@ -7,7 +7,7 @@ pub trait TextBuffer {
     fn set_plane(&mut self, modal: &Modal);
     fn insert_newline(&mut self, at: LineCol) -> LineCol;
     /// Insert a single symbol at specified position
-    fn insert(&mut self, at: LineCol, insertable: char) -> Result<LineCol>;
+    fn insert(&mut self, at: LineCol, insertable: char) -> Result<()>;
 
     /// Insert text at the specified position
     fn insert_text(
@@ -18,7 +18,7 @@ pub trait TextBuffer {
     ) -> Result<LineCol>;
 
     /// Delete text in the specified range
-    fn delete_selection(&mut self, from: LineCol, to: LineCol) -> Result<LineCol>;
+    fn delete_selection(&mut self, from: LineCol, to: LineCol) -> Result<()>;
 
     /// Delete the symbol at the specified position
     fn delete(&mut self, at: LineCol) -> Result<LineCol>;
@@ -43,17 +43,11 @@ pub trait TextBuffer {
     /// Get the contents of a specific line
     fn line(&self, line_number: usize) -> Result<&str>;
 
-    /// Find the next occurrence of a Pattern
-    fn find(&self, query: impl Pattern, at: LineCol) -> Result<LineCol>;
-
-    /// Find the previous occurrence of a Pattern
-    fn rfind(&self, query: impl Pattern, at: LineCol) -> Result<LineCol>;
-
     /// Undo the last operation
-    fn undo(&mut self, at: LineCol) -> Result<LineCol>;
+    fn undo(&mut self, at: LineCol) -> Result<()>;
 
     /// Redo the last undone operation
-    fn redo(&mut self, at: LineCol) -> Result<LineCol>;
+    fn redo(&mut self, at: LineCol) -> Result<()>;
 
     /// Get the entire text for the current buffer
     fn get_entire_text(&self) -> &[String];
@@ -163,6 +157,39 @@ impl Default for VecBuffer {
             past: Stack::default(),
             future: Stack::default(),
             plane: BufferPlane::Normal,
+        }
+    }
+}
+
+impl<T: TextBuffer> Component for T {
+    fn execute_action(&mut self, a: &crate::BaseAction) -> Result<()> {
+        match a {
+            BaseAction::InsertAt(lc, ch) => self.insert(lc.clone_inner(), *ch),
+            BaseAction::DeleteAt(lc, rep) => {
+                let start = if lc.is_evaluated() {
+                    lc.clone_inner()
+                } else {
+                    Err(Error::ProgrammingBug {
+                        descr: "A component received an uninitialized value.".to_string(),
+                    })?
+                };
+                let mut end = start;
+                end.col += rep;
+                self.delete_selection(start, end)
+            }
+            BaseAction::DeleteLineAt(lc, rep) => {
+                let start = if lc.is_evaluated() {
+                    lc.clone_inner()
+                } else {
+                    Err(Error::ProgrammingBug {
+                        descr: "A component received an uninitialized value.".to_string(),
+                    })?
+                };
+                let mut end = start;
+                end.line += rep;
+                self.delete_selection(start, end)
+            }
+            _ => Ok(()),
         }
     }
 }
@@ -278,17 +305,16 @@ impl TextBuffer for VecBuffer {
         at.col = 0;
         at
     }
-    fn insert(&mut self, mut at: LineCol, ch: char) -> Result<LineCol> {
+    fn insert(&mut self, at: LineCol, ch: char) -> Result<()> {
         if at.line > self.get_buffer().len() || at.col > self.get_buffer()[at.line].len() {
             return Err(Error::InvalidPosition);
         }
         self.get_mut_buffer()[at.line].insert(at.col, ch);
-        at.col += 1;
-        Ok(at)
+        Ok(())
     }
     /// Performs a redo operation, moving the current state to the next future state if available.
     /// Returns an error if there are no `future` states to redo to.
-    fn redo(&mut self, at: LineCol) -> Result<LineCol> {
+    fn redo(&mut self, at: LineCol) -> Result<()> {
         self.future
             .pop()
             .map(|future_state| {
@@ -299,12 +325,13 @@ impl TextBuffer for VecBuffer {
                 });
                 future_state.loc
             })
-            .map_or_else(|| Err(Error::NowhereToGo), Ok)
+            .map_or_else(|| Err(Error::NowhereToGo), Ok)?;
+        Ok(())
     }
 
     /// Performs an undo operation, moving the current state to the previous past state if available.
     /// Returns an error if there are no `past` states to undo to.
-    fn undo(&mut self, at: LineCol) -> Result<LineCol> {
+    fn undo(&mut self, at: LineCol) -> Result<()> {
         self.past
             .pop()
             .map(|past_state| {
@@ -315,79 +342,8 @@ impl TextBuffer for VecBuffer {
                 });
                 past_state.loc
             })
-            .map_or_else(|| Err(Error::NowhereToGo), Ok)
-    }
-
-    /// Searches for a query string in the buffer, starting from a given position.
-    ///
-    /// # Arguments
-    ///
-    /// * `query` - The string to search for.
-    /// * `at` - The position (line and column) to start the search from.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(LineCol)` - The position (line and column) where the query was found.
-    /// * `Err(BufferError::PatternNotFound)` - If the query string is not found in the buffer.
-    ///
-    /// # Behavior
-    ///
-    /// The search starts at the given position and continues to the end of the buffer.
-    /// It searches the remainder of the starting line, then subsequent lines in their entirety.
-    /// The search is case-sensitive and returns the position of the first occurrence found.
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let buffer = // ... initialize buffer ...
-    /// let result = buffer.find("example", LineCol{line: 1, col: 5});
-    /// assert_eq!(result, Ok(LineCol{line: 2, col: 10})); // Found on line 2, column 10
-    /// ```
-    fn find(&self, query: impl Pattern, at: LineCol) -> Result<LineCol> {
-        query
-            .find_pattern(&self.get_buffer_window(Some(at), None)?)
-            .ok_or(Error::PatternNotFound)
-            .map(|v| LineCol {
-                line: v.line + at.line,
-                col: if v.line == 0 { v.col + at.col } else { v.col },
-            })
-    }
-
-    /// Searches backwards for a query string in the buffer, ending at a given position.
-    ///
-    /// # Arguments
-    ///
-    /// * `query` - The string to search for.
-    /// * `at` - The position (line and column) to start the reverse search from.
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(LineCol)` - The position (line and column) where the query was found.
-    /// * `Err(BufferError::PatternNotFound)` - If the query string is not found in the buffer.
-    ///
-    /// # Behavior
-    ///
-    /// The search starts at the given position and continues backwards to the beginning of the buffer.
-    /// It first searches the portion of the starting line from the given position to its start,
-    /// then searches previous lines in their entirety from end to start.
-    /// The search is case-sensitive and returns the position of the last occurrence found
-    /// (i.e., the first occurrence when searching backwards).
-    ///
-    /// # Examples
-    ///
-    /// ```
-    /// let buffer = // ... initialize buffer ...
-    /// let result = buffer.rfind("example", LineCol{line: 2, col: 15});
-    /// assert_eq!(result, Ok(LineCol{line: 1, col: 5})); // Found on line 1, column 5
-    /// ```
-    fn rfind(&self, query: impl Pattern, at: LineCol) -> Result<LineCol> {
-        query
-            .rfind_pattern(&self.get_buffer_window(None, Some(at))?)
-            .ok_or(Error::PatternNotFound)
-            .map(|v| LineCol {
-                line: v.line,
-                col: v.col,
-            })
+            .map_or_else(|| Err(Error::NowhereToGo), Ok)?;
+        Ok(())
     }
 
     fn len(&self) -> usize {
@@ -650,7 +606,7 @@ impl TextBuffer for VecBuffer {
     ///
     /// This function modifies the buffer's content. After calling this function,
     /// line numbers and column positions after the deleted range may change.
-    fn delete_selection(&mut self, from: LineCol, to: LineCol) -> Result<LineCol> {
+    fn delete_selection(&mut self, from: LineCol, to: LineCol) -> Result<()> {
         let buf = self.get_mut_buffer();
         if from.line >= buf.len()
             || to.line >= buf.len()
@@ -663,10 +619,7 @@ impl TextBuffer for VecBuffer {
 
         if from.col == 0 && to.col >= buf[to.line].len() {
             buf.drain(from.line..=to.line);
-            return Ok(LineCol {
-                col: to.col,
-                line: from.line,
-            });
+            return Ok(());
         }
 
         if from.line == to.line {
@@ -684,10 +637,7 @@ impl TextBuffer for VecBuffer {
             buf[from.line].push_str(&end_line_tail);
             buf.drain(from.line + 1..=to.line);
         }
-        Ok(LineCol {
-            col: to.col,
-            line: from.line,
-        })
+        Ok(())
     }
     fn is_empty(&self) -> bool {
         self.get_buffer().is_empty()
@@ -861,113 +811,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_rfind_basic() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.rfind("line", LineCol { line: 2, col: 0 }).unwrap(),
-            LineCol { line: 1, col: 7 }
-        );
-    }
-
-    #[test]
-    fn test_rfind_not_including_start() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.rfind("line", LineCol { line: 1, col: 7 }).unwrap(),
-            LineCol { line: 0, col: 6 }
-        );
-    }
-
-    #[test]
-    fn test_rfind_across_lines() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.rfind("First", LineCol { line: 2, col: 0 }).unwrap(),
-            LineCol { line: 0, col: 0 }
-        );
-    }
-
-    #[test]
-    fn test_rfind_at_end_of_buffer() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.rfind("too", LineCol { line: 2, col: 22 }).unwrap(),
-            LineCol { line: 2, col: 19 }
-        );
-    }
-    #[test]
-    fn test_find_basic() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.find("line", LineCol { line: 0, col: 0 }).unwrap(),
-            LineCol { line: 0, col: 6 }
-        );
-    }
-
-    #[test]
-    fn test_find_from_middle() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.find("text", LineCol { line: 0, col: 10 }).unwrap(),
-            LineCol { line: 0, col: 21 }
-        );
-    }
-
-    #[test]
-    fn test_find_across_lines() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.find("Second", LineCol { line: 0, col: 22 }).unwrap(),
-            LineCol { line: 1, col: 0 }
-        );
-    }
-
-    #[test]
-    fn test_find_at_start_of_line() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.find("Third", LineCol { line: 2, col: 0 }).unwrap(),
-            LineCol { line: 2, col: 0 }
-        );
-    }
-
-    #[test]
-    fn test_find_at_end_of_line() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.find("text", LineCol { line: 1, col: 0 }).unwrap(),
-            LineCol { line: 1, col: 21 }
-        );
-    }
-
-    #[test]
-    fn test_find_exact_position() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.find("Second", LineCol { line: 1, col: 0 }).unwrap(),
-            LineCol { line: 1, col: 0 }
-        );
-    }
-
-    #[test]
-    fn test_find_multiple_occurrences() {
-        let buf = new_test_buffer_find();
-        assert_eq!(
-            buf.find("line", LineCol { line: 0, col: 10 }).unwrap(),
-            LineCol { line: 1, col: 7 }
-        );
-    }
-
-    #[test]
-    fn test_find_from_empty_line() {
-        let mut buf = new_test_buffer_find();
-        buf.text.insert(1, String::new());
-        assert_eq!(
-            buf.find("Third", LineCol { line: 1, col: 0 }).unwrap(),
-            LineCol { line: 3, col: 0 }
-        );
-    }
     /// "First line"
     /// "Second line"
     /// "Third line"
@@ -1285,53 +1128,6 @@ mod tests {
         // Verify Normal mode text remains unchanged
         buffer.set_plane(&Modal::Normal);
         assert_eq!(buffer.text, vec![" text"]);
-    }
-
-    #[test]
-    fn test_find_first_uppercase() {
-        let buf = new_test_buffer_find();
-        let pattern = |c: char| c.is_uppercase();
-        assert_eq!(
-            buf.find(pattern, LineCol { line: 0, col: 1 }).unwrap(),
-            LineCol { line: 1, col: 0 }
-        );
-    }
-
-    #[test]
-    fn test_find_first_whitespace() {
-        let buf = new_test_buffer_find();
-        let pattern = char::is_whitespace;
-        assert_eq!(
-            buf.find(pattern, LineCol { line: 0, col: 0 }).unwrap(),
-            LineCol { line: 0, col: 5 }
-        );
-    }
-
-    #[test]
-    fn test_find_specific_char() {
-        let buf = new_test_buffer_find();
-        let pattern = |c: char| c == 'e';
-        assert_eq!(
-            buf.find(pattern, LineCol { line: 0, col: 0 }).unwrap(),
-            LineCol { line: 0, col: 9 }
-        );
-    }
-
-    #[test]
-    fn test_find_no_match() {
-        let buf = new_test_buffer_find();
-        let pattern = |c: char| c.is_ascii_punctuation() && c != ',';
-        assert!(buf.find(pattern, LineCol { line: 0, col: 0 }).is_err());
-    }
-
-    #[test]
-    fn test_find_complex_condition() {
-        let buf = new_test_buffer_find();
-        let pattern = |c: char| c.is_lowercase() && "aeiou".contains(c);
-        assert_eq!(
-            buf.find(pattern, LineCol { line: 0, col: 0 }).unwrap(),
-            LineCol { line: 0, col: 1 } // Should find 'i' in "First"
-        );
     }
     #[test]
     fn test_get_partial_buffer_full_range() {

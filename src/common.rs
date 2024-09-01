@@ -25,9 +25,9 @@ pub enum BaseAction {
     Yank,
     Paste(char, usize),
 
-    InsertAt(char, Lazy<LineCol>),
-    DeleteAt(usize, Lazy<LineCol>),
-    DeleteCurrentLine(usize),
+    InsertAt(Lazy<LineCol>, char),
+    DeleteAt(Lazy<LineCol>, usize),
+    DeleteLineAt(Lazy<LineCol>, usize),
 
     ExecuteCommand(Command),
 
@@ -57,8 +57,8 @@ impl BaseAction {
             | Self::MoveRight(n)
             | Self::Undo(n)
             | Self::Redo(n)
-            | Self::DeleteAt(n, _)
-            | Self::DeleteCurrentLine(n) => Some(n),
+            | Self::DeleteAt(_, n)
+            | Self::DeleteLineAt(_, n) => Some(n),
             Self::Paste(_, n) => Some(n),
             _ => None,
         }
@@ -246,7 +246,7 @@ impl Selection {
 }
 
 /// Contains the main modal variants of the editor.
-#[derive(Clone, Default, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Modal {
     #[default]
     Normal,

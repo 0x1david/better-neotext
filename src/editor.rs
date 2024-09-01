@@ -116,6 +116,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
                 (KeyCode::Char('G'), KeyModifiers::NONE) => Action::JumpEOF,
 
                 // Mode Changes
+                (KeyCode::Char('i'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Insert),
                 (KeyCode::Char('v'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Visual),
                 (KeyCode::Char('V'), KeyModifiers::NONE) => Action::ChangeMode(Modal::VisualLine),
                 (KeyCode::Char(':'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Command),
@@ -148,11 +149,21 @@ impl<Buff: TextBuffer> Editor<Buff> {
             }
         };
 
-        println!("Translated Action: {:?}", action);
         Ok(action)
     }
     fn interpret_insert_event(&self, key_event: KeyEvent) -> Result<Action> {
-        todo!()
+        let action = match key_event.code {
+            KeyCode::Char(c) => Action::InsertCharAtCursor(c),
+            KeyCode::Enter => Action::InsertNewLine,
+            KeyCode::Esc => Action::ChangeMode(Modal::Normal),
+            KeyCode::Backspace => Action::DeleteUnder,
+            KeyCode::Left => Action::BumpLeft,
+            KeyCode::Right => Action::BumpRight,
+            KeyCode::Up => Action::BumpUp,
+            KeyCode::Down => Action::BumpDown,
+            _ => Action::Nothing,
+        };
+        Ok(action)
     }
 
     fn interpret_command_event(&self, key_event: KeyEvent) -> Result<Action> {
@@ -187,18 +198,18 @@ impl<Buff: TextBuffer> Editor<Buff> {
     // Compute the lazy values of BaseActions
     fn compute_lazy_values<'a>(&self, a: &'a BaseAction) -> Cow<'a, BaseAction> {
         match a {
-            action @ BaseAction::InsertAt(i, lazy) => {
+            action @ BaseAction::InsertAt(lazy, i) => {
                 if lazy.is_evaluated() {
                     Cow::Borrowed(action)
                 } else {
-                    Cow::Owned(BaseAction::InsertAt(*i, Lazy::with_inner(self.cursor.pos)))
+                    Cow::Owned(BaseAction::InsertAt(Lazy::with_inner(self.cursor.pos), *i))
                 }
             }
-            action @ BaseAction::DeleteAt(i, lazy) => {
+            action @ BaseAction::DeleteAt(lazy, i) => {
                 if lazy.is_evaluated() {
                     Cow::Borrowed(action)
                 } else {
-                    Cow::Owned(BaseAction::DeleteAt(*i, Lazy::with_inner(self.cursor.pos)))
+                    Cow::Owned(BaseAction::DeleteAt(Lazy::with_inner(self.cursor.pos), *i))
                 }
             }
             otherwise => Cow::Borrowed(otherwise),
@@ -209,6 +220,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
         let action = &self.compute_lazy_values(action);
 
         info!("Delegating Action: {:?}", action);
+        self.buffer.execute_action(action)?;
         self.cursor.execute_action(action)?;
         self.viewport.execute_action(action)?;
         self.shadow_cursor.execute_action(action)?;
@@ -270,7 +282,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
         Ok(())
     }
-    fn resolve_action(&self, api_action: Action) -> Result<Vec<BaseAction>> {
+    fn resolve_action(&mut self, api_action: Action) -> Result<Vec<BaseAction>> {
         match api_action {
             // No-op and exit actions
             Action::Nothing => ok_vec!(),
@@ -316,10 +328,10 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
             // Find and search actions
             Action::Find(pat) => {
-                ok_vec![self.resolve_find(|p, pos| self.buffer.find(p, pos), pat)?]
+                ok_vec![self.resolve_find(|p, pos| self.find(p, pos), pat)?]
             }
             Action::ReverseFind(pat) => {
-                ok_vec![self.resolve_find(|p, pos| self.buffer.rfind(p, pos), pat)?]
+                ok_vec![self.resolve_find(|p, pos| self.rfind(p, pos), pat)?]
             }
             Action::FindChar(ch) => self.resolve_action(Action::Find(ch.to_string())),
             Action::ReverseFindChar(ch) => self.resolve_action(Action::ReverseFind(ch.to_string())),
@@ -335,7 +347,10 @@ impl<Buff: TextBuffer> Editor<Buff> {
             }
 
             // Mode change actions
-            Action::ChangeMode(mode) => ok_vec![BaseAction::ChangeMode(mode)],
+            Action::ChangeMode(mode) => {
+                self.modal = mode;
+                ok_vec![BaseAction::ChangeMode(mode)]
+            }
             Action::InsertModeEOL => {
                 let dist = self.buffer.max_col(self.cursor.line()) - self.cursor.col();
                 ok_vec![
@@ -357,23 +372,23 @@ impl<Buff: TextBuffer> Editor<Buff> {
             Action::Redo => ok_vec![BaseAction::Redo(1)],
             Action::DeleteUnder => ok_vec![
                 BaseAction::MoveDown(1),
-                BaseAction::DeleteCurrentLine(1),
+                BaseAction::DeleteLineAt(Lazy::new(), 1),
                 BaseAction::MoveUp(1),
             ],
             Action::Replace(char) => {
                 ok_vec![
-                    BaseAction::DeleteAt(1, Lazy::new()),
-                    BaseAction::InsertAt(char, Lazy::new()),
+                    BaseAction::DeleteAt(Lazy::new(), 1),
+                    BaseAction::InsertAt(Lazy::new(), char),
                 ]
             }
             Action::DeleteBefore => {
                 ok_vec![
                     BaseAction::MoveLeft(1),
-                    BaseAction::DeleteAt(1, Lazy::new())
+                    BaseAction::DeleteAt(Lazy::new(), 1)
                 ]
             }
             Action::Undo(steps) => ok_vec![BaseAction::Undo(steps.into())],
-            Action::InsertCharAtCursor(ch) => ok_vec![BaseAction::InsertAt(ch, Lazy::new())],
+            Action::InsertCharAtCursor(ch) => ok_vec![BaseAction::InsertAt(Lazy::new(), ch)],
 
             // Paste actions
             Action::Paste(reg) => ok_vec![BaseAction::Paste(reg, 1)],
@@ -384,7 +399,7 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
             // Miscellaneous actions
             Action::OpenFile => ok_vec![BaseAction::OpenFile],
-            Action::InsertTab => ok_vec![], // Currently not implementd
+            Action::InsertNewLine => ok_vec![], // Currently not implementd
             Action::ExecuteCommand(_command) => unimplemented!(),
             Action::FetchFromHistory => ok_vec![BaseAction::FetchFromHistory],
         }
@@ -443,16 +458,88 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
         let dest = match direction {
             Direction::Forward => {
-                let dest = self.buffer.find(&first_boundary, pos)?;
-                self.buffer.find(&second_boundary, dest)?
+                let dest = self.find(&first_boundary, pos)?;
+                self.find(&second_boundary, dest)?
             }
             Direction::Backward => {
-                let dest = self.buffer.rfind(&first_boundary, pos)?;
-                self.buffer.rfind(&second_boundary, dest)?
+                let dest = self.rfind(&first_boundary, pos)?;
+                self.rfind(&second_boundary, dest)?
             }
         };
 
         Ok(BaseAction::SetCursor(dest))
+    }
+
+    /// Searches for a query string in the buffer, starting from a given position.
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The string to search for.
+    /// * `at` - The position (line and column) to start the search from.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(LineCol)` - The position (line and column) where the query was found.
+    /// * `Err(BufferError::PatternNotFound)` - If the query string is not found in the buffer.
+    ///
+    /// # Behavior
+    ///
+    /// The search starts at the given position and continues to the end of the buffer.
+    /// It searches the remainder of the starting line, then subsequent lines in their entirety.
+    /// The search is case-sensitive and returns the position of the first occurrence found.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let buffer = // ... initialize buffer ...
+    /// let result = buffer.find("example", LineCol{line: 1, col: 5});
+    /// assert_eq!(result, Ok(LineCol{line: 2, col: 10})); // Found on line 2, column 10
+    /// ```
+    fn find(&self, query: impl Pattern, at: LineCol) -> Result<LineCol> {
+        query
+            .find_pattern(&self.buffer.get_buffer_window(Some(at), None)?)
+            .ok_or(Error::PatternNotFound)
+            .map(|v| LineCol {
+                line: v.line + at.line,
+                col: if v.line == 0 { v.col + at.col } else { v.col },
+            })
+    }
+
+    /// Searches backwards for a query string in the buffer, ending at a given position.
+    ///
+    /// # Arguments
+    ///
+    /// * `query` - The string to search for.
+    /// * `at` - The position (line and column) to start the reverse search from.
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(LineCol)` - The position (line and column) where the query was found.
+    /// * `Err(BufferError::PatternNotFound)` - If the query string is not found in the buffer.
+    ///
+    /// # Behavior
+    ///
+    /// The search starts at the given position and continues backwards to the beginning of the buffer.
+    /// It first searches the portion of the starting line from the given position to its start,
+    /// then searches previous lines in their entirety from end to start.
+    /// The search is case-sensitive and returns the position of the last occurrence found
+    /// (i.e., the first occurrence when searching backwards).
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// let buffer = // ... initialize buffer ...
+    /// let result = buffer.rfind("example", LineCol{line: 2, col: 15});
+    /// assert_eq!(result, Ok(LineCol{line: 1, col: 5})); // Found on line 1, column 5
+    /// ```
+    fn rfind(&self, query: impl Pattern, at: LineCol) -> Result<LineCol> {
+        query
+            .rfind_pattern(&self.buffer.get_buffer_window(None, Some(at))?)
+            .ok_or(Error::PatternNotFound)
+            .map(|v| LineCol {
+                line: v.line,
+                col: v.col,
+            })
     }
 }
 
@@ -499,9 +586,9 @@ enum Action {
     // Text Manipulation
     Replace(char),
     InsertCharAtCursor(char),
+    InsertNewLine,
     InsertModeBelow,
     InsertModeAbove,
-    InsertTab,
     DeleteBefore,
     DeleteUnder,
 
@@ -532,19 +619,37 @@ pub struct Lazy<T> {
     inner: Option<T>,
 }
 impl<T> Lazy<T> {
+    /// Create Type Inferred Lazy Struct
     pub fn new() -> Self {
         Lazy { inner: None }
     }
-    pub fn as_inner(self) -> Option<T> {
+    /// Returns the inner evaluated value if there is one
+    pub fn into_inner(self) -> Option<T> {
         self.inner
     }
+    /// Initializes a Lazy Type with an already initialized value.
     pub fn with_inner(v: T) -> Self {
         Lazy { inner: Some(v) }
     }
+    /// Set the inner value Of Lazy value
     pub fn set_inner(&mut self, v: T) {
         self.inner = Some(v)
     }
+    /// True if the lazy already contains an inner value
     pub fn is_evaluated(&self) -> bool {
         self.inner.is_some()
+    }
+}
+
+impl<T: Clone> Lazy<T> {
+    // Clones the inner type T, panicking if called on an unevaluated lazy
+    pub fn clone_inner(&self) -> T {
+        self.inner.clone().unwrap()
+    }
+}
+
+impl<T> Default for Lazy<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
