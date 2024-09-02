@@ -1,11 +1,22 @@
-use crate::{BaseAction, Component, Error, LineCol, Modal, Pattern, Result};
-use std::collections::VecDeque;
+use tracing::instrument;
+
+use crate::{editor::Lazy, BaseAction, Component, Error, LineCol, Modal, Pattern, Result};
+use std::{collections::VecDeque, fmt::Debug};
 
 /// Trait defining the interface for a text buffer
 #[allow(clippy::module_name_repetitions)]
 pub trait TextBuffer {
+    fn verify_lazy_values<T: Clone>(&self, l: &Lazy<T>) -> Result<T> {
+        if l.is_evaluated() {
+            Ok(l.clone_inner())
+        } else {
+            Err(Error::ProgrammingBug {
+                descr: "A component received an uninitialized value.".to_string(),
+            })
+        }
+    }
     fn set_plane(&mut self, modal: &Modal);
-    fn insert_newline(&mut self, at: LineCol) -> LineCol;
+    fn insert_newline(&mut self, at: LineCol);
     /// Insert a single symbol at specified position
     fn insert(&mut self, at: LineCol, insertable: char) -> Result<()>;
 
@@ -161,33 +172,27 @@ impl Default for VecBuffer {
     }
 }
 
-impl<T: TextBuffer> Component for T {
+impl<T: TextBuffer + Debug> Component for T {
+    #[instrument]
     fn execute_action(&mut self, a: &crate::BaseAction) -> Result<()> {
         match a {
             BaseAction::InsertAt(lc, ch) => self.insert(lc.clone_inner(), *ch),
             BaseAction::DeleteAt(lc, rep) => {
-                let start = if lc.is_evaluated() {
-                    lc.clone_inner()
-                } else {
-                    Err(Error::ProgrammingBug {
-                        descr: "A component received an uninitialized value.".to_string(),
-                    })?
-                };
+                let start = self.verify_lazy_values(lc)?;
                 let mut end = start;
                 end.col += rep;
                 self.delete_selection(start, end)
             }
             BaseAction::DeleteLineAt(lc, rep) => {
-                let start = if lc.is_evaluated() {
-                    lc.clone_inner()
-                } else {
-                    Err(Error::ProgrammingBug {
-                        descr: "A component received an uninitialized value.".to_string(),
-                    })?
-                };
+                let start = self.verify_lazy_values(lc)?;
                 let mut end = start;
                 end.line += rep;
                 self.delete_selection(start, end)
+            }
+            BaseAction::InsertLineAt(lc, rep) => {
+                let start = self.verify_lazy_values(lc)?;
+                self.insert_newline(start);
+                Ok(())
             }
             _ => Ok(()),
         }
@@ -299,11 +304,8 @@ impl TextBuffer for VecBuffer {
         let col = buf[line].len();
         LineCol { line, col }
     }
-    fn insert_newline(&mut self, mut at: LineCol) -> LineCol {
+    fn insert_newline(&mut self, at: LineCol) {
         self.get_mut_buffer().insert(at.line + 1, String::new());
-        at.line += 1;
-        at.col = 0;
-        at
     }
     fn insert(&mut self, at: LineCol, ch: char) -> Result<()> {
         if at.line > self.get_buffer().len() || at.col > self.get_buffer()[at.line].len() {

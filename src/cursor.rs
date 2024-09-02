@@ -1,4 +1,4 @@
-use tracing::{info, instrument};
+use tracing::instrument;
 
 use crate::{BaseAction, Component, LineCol, Modal};
 

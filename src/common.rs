@@ -26,6 +26,7 @@ pub enum BaseAction {
     Paste(char, usize),
 
     InsertAt(Lazy<LineCol>, char),
+    InsertLineAt(Lazy<LineCol>, usize),
     DeleteAt(Lazy<LineCol>, usize),
     DeleteLineAt(Lazy<LineCol>, usize),
 

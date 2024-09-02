@@ -36,7 +36,22 @@ macro_rules! ok_vec{
     }
 }
 
-impl<Buff: TextBuffer> Editor<Buff> {
+/// Takes an evaluatable base action and evaluates the lazy value inside it while keeping the rest
+/// of the attributes unchanged
+macro_rules! lazy_eval {
+    ($action:expr, $variant:ident, $lazy:expr, $i:expr, $self:expr) => {
+        if $lazy.is_evaluated() {
+            Cow::Borrowed($action)
+        } else {
+            Cow::Owned(BaseAction::$variant(
+                Lazy::with_inner($self.cursor.pos),
+                *$i,
+            ))
+        }
+    };
+}
+
+impl<Buff: TextBuffer + Debug> Editor<Buff> {
     pub fn new(buff: Buff, without_target: bool) -> Self {
         Self {
             buffer: buff,
@@ -198,19 +213,13 @@ impl<Buff: TextBuffer> Editor<Buff> {
     // Compute the lazy values of BaseActions
     fn compute_lazy_values<'a>(&self, a: &'a BaseAction) -> Cow<'a, BaseAction> {
         match a {
-            action @ BaseAction::InsertAt(lazy, i) => {
-                if lazy.is_evaluated() {
-                    Cow::Borrowed(action)
-                } else {
-                    Cow::Owned(BaseAction::InsertAt(Lazy::with_inner(self.cursor.pos), *i))
-                }
+            action @ BaseAction::InsertAt(lazy, i) => lazy_eval!(action, InsertAt, lazy, i, self),
+            action @ BaseAction::DeleteAt(lazy, i) => lazy_eval!(action, DeleteAt, lazy, i, self),
+            action @ BaseAction::InsertLineAt(lazy, i) => {
+                lazy_eval!(action, InsertLineAt, lazy, i, self)
             }
-            action @ BaseAction::DeleteAt(lazy, i) => {
-                if lazy.is_evaluated() {
-                    Cow::Borrowed(action)
-                } else {
-                    Cow::Owned(BaseAction::DeleteAt(Lazy::with_inner(self.cursor.pos), *i))
-                }
+            action @ BaseAction::DeleteLineAt(lazy, i) => {
+                lazy_eval!(action, DeleteLineAt, lazy, i, self)
             }
             otherwise => Cow::Borrowed(otherwise),
         }
@@ -221,8 +230,8 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
         info!("Delegating Action: {:?}", action);
         self.buffer.execute_action(action)?;
-        self.cursor.execute_action(action)?;
         self.viewport.execute_action(action)?;
+        self.cursor.execute_action(action)?;
         self.shadow_cursor.execute_action(action)?;
         self.extensions
             .iter_mut()
@@ -388,7 +397,10 @@ impl<Buff: TextBuffer> Editor<Buff> {
                 ]
             }
             Action::Undo(steps) => ok_vec![BaseAction::Undo(steps.into())],
-            Action::InsertCharAtCursor(ch) => ok_vec![BaseAction::InsertAt(Lazy::new(), ch)],
+            Action::InsertCharAtCursor(ch) => ok_vec![
+                BaseAction::InsertAt(Lazy::new(), ch),
+                BaseAction::MoveRight(1)
+            ],
 
             // Paste actions
             Action::Paste(reg) => ok_vec![BaseAction::Paste(reg, 1)],
@@ -399,7 +411,10 @@ impl<Buff: TextBuffer> Editor<Buff> {
 
             // Miscellaneous actions
             Action::OpenFile => ok_vec![BaseAction::OpenFile],
-            Action::InsertNewLine => ok_vec![], // Currently not implementd
+            Action::InsertNewLine => ok_vec![
+                BaseAction::InsertLineAt(Lazy::new(), 1),
+                BaseAction::MoveDown(1)
+            ],
             Action::ExecuteCommand(_command) => unimplemented!(),
             Action::FetchFromHistory => ok_vec![BaseAction::FetchFromHistory],
         }
