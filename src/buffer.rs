@@ -410,7 +410,7 @@ impl TextBuffer for VecBuffer {
             || from.col > buffer[from.line].len()
             || to.col > buffer[to.line].len();
         if start_exceeds_end || exceeds_file_len {
-            return Err(Error::InvalidRange);
+            return Err(Error::InvalidRange(from, to));
         }
 
         if from.line == to.line {
@@ -616,7 +616,7 @@ impl TextBuffer for VecBuffer {
             || from.line > to.line
             || from == to
         {
-            return Err(Error::InvalidRange);
+            return Err(Error::InvalidRange(from, to));
         }
 
         if from.col == 0 && to.col >= buf[to.line].len() {

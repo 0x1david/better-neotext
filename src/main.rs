@@ -59,7 +59,7 @@ fn main() {
 
     match instance.run_event_loop() {
         Err(Error::ExitCall) => info!("Quitting due to ExitCall"),
-        _ => error!("Unexpected end to our journey"),
+        otherwise => error!("Unexpected end to our journey: {:?}", otherwise),
     }
 }
 

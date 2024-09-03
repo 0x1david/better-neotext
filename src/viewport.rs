@@ -25,9 +25,9 @@ impl Component for ViewPort {
     fn execute_action(&mut self, a: &BaseAction) -> Result<()> {
         println!("Executing Action at Viewport: {:?}", a);
         match a {
+            _ => (),
             BaseAction::MoveUp(dist) => self.scroll_up(*dist),
             BaseAction::MoveDown(dist) => self.scroll_down(*dist),
-            _ => (),
         };
         Ok(())
     }
@@ -45,8 +45,8 @@ impl ViewPort {
         self.bottom_border -= actual_move;
     }
     fn scroll_down(&mut self, dist: usize) {
-        self.top_border += dist;
         self.bottom_border += dist;
+        self.top_border += dist;
     }
 }
 

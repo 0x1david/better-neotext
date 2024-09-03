@@ -30,6 +30,15 @@ pub struct Editor<Buff: TextBuffer> {
     extensions: Vec<Box<dyn Component>>,
 }
 
+macro_rules! lazy {
+    () => {
+        Lazy::new()
+    };
+    ($expr: expr) => {
+        Lazy::with_inner($expr)
+    };
+}
+
 macro_rules! ok_vec{
     ($($expr:expr),* $(,)?) => {
         Ok(vec![$($expr),*])
@@ -43,10 +52,7 @@ macro_rules! lazy_eval {
         if $lazy.is_evaluated() {
             Cow::Borrowed($action)
         } else {
-            Cow::Owned(BaseAction::$variant(
-                Lazy::with_inner($self.cursor.pos),
-                *$i,
-            ))
+            Cow::Owned(BaseAction::$variant(lazy!($self.cursor.pos), *$i))
         }
     };
 }
@@ -149,8 +155,8 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 // Text Manipulation
                 (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertModeBelow,
                 (KeyCode::Char('O'), KeyModifiers::NONE) => Action::InsertModeAbove,
-                (KeyCode::Char('X'), KeyModifiers::NONE) => Action::DeleteBefore,
-                (KeyCode::Char('x'), KeyModifiers::NONE) => Action::DeleteUnder,
+                (KeyCode::Char('X'), KeyModifiers::NONE) => Action::DeleteBeforeCursor,
+                (KeyCode::Char('x'), KeyModifiers::NONE) => Action::DeleteAtCursor,
 
                 // Undo/Redo
                 (KeyCode::Char('u'), KeyModifiers::NONE) => Action::Undo(1),
@@ -172,7 +178,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             KeyCode::Char(c) => Action::InsertCharAtCursor(c),
             KeyCode::Enter => Action::InsertNewLine,
             KeyCode::Esc => Action::ChangeMode(Modal::Normal),
-            KeyCode::Backspace => Action::DeleteUnder,
+            KeyCode::Backspace => Action::DeleteBeforeCursor,
             KeyCode::Left => Action::BumpLeft,
             KeyCode::Right => Action::BumpRight,
             KeyCode::Up => Action::BumpUp,
@@ -189,7 +195,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             KeyCode::Char(c) => Action::InsertCharAtCursor(c),
             KeyCode::Up => Action::BumpUp,
             KeyCode::Down => Action::BumpDown,
-            KeyCode::Backspace => Action::DeleteBefore,
+            KeyCode::Backspace => Action::DeleteBeforeCursor,
             KeyCode::Left => Action::BumpLeft,
             KeyCode::Right => Action::BumpRight,
             KeyCode::Esc => Action::ChangeMode(Modal::Normal),
@@ -392,28 +398,20 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             Action::Save => ok_vec![BaseAction::Save],
             Action::Yank => ok_vec![BaseAction::Yank],
             Action::Redo => ok_vec![BaseAction::Redo(1)],
-            Action::DeleteUnder => ok_vec![
-                BaseAction::MoveDown(1),
-                BaseAction::DeleteLineAt(Lazy::new(), 1),
-                BaseAction::MoveUp(1),
-            ],
+            Action::DeleteAtCursor => ok_vec![BaseAction::DeleteAt(lazy!(), 1),],
             Action::Replace(char) => {
                 ok_vec![
-                    BaseAction::DeleteAt(Lazy::new(), 1),
-                    BaseAction::InsertAt(Lazy::new(), char),
+                    BaseAction::DeleteAt(lazy!(), 1),
+                    BaseAction::InsertAt(lazy!(), char),
                 ]
             }
-            Action::DeleteBefore => {
-                ok_vec![
-                    BaseAction::MoveLeft(1),
-                    BaseAction::DeleteAt(Lazy::new(), 1)
-                ]
+            Action::DeleteBeforeCursor => {
+                ok_vec![BaseAction::MoveLeft(1), BaseAction::DeleteAt(lazy!(), 1)]
             }
             Action::Undo(steps) => ok_vec![BaseAction::Undo(steps.into())],
-            Action::InsertCharAtCursor(ch) => ok_vec![
-                BaseAction::InsertAt(Lazy::new(), ch),
-                BaseAction::MoveRight(1)
-            ],
+            Action::InsertCharAtCursor(ch) => {
+                ok_vec![BaseAction::InsertAt(lazy!(), ch), BaseAction::MoveRight(1)]
+            }
 
             // Paste actions
             Action::Paste(reg) => ok_vec![BaseAction::Paste(reg, 1)],
@@ -425,7 +423,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             // Miscellaneous actions
             Action::OpenFile => ok_vec![BaseAction::OpenFile],
             Action::InsertNewLine => ok_vec![
-                BaseAction::InsertLineAt(Lazy::new(), 1),
+                BaseAction::InsertLineAt(lazy!(), 1),
                 BaseAction::MoveDown(1)
             ],
             Action::ExecuteCommand(_command) => unimplemented!(),
@@ -617,8 +615,8 @@ enum Action {
     InsertNewLine,
     InsertModeBelow,
     InsertModeAbove,
-    DeleteBefore,
-    DeleteUnder,
+    DeleteBeforeCursor,
+    DeleteAtCursor,
 
     // Clipboard Operations
     Yank,

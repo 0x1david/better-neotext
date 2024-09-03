@@ -1,4 +1,8 @@
+use std::fmt::Debug;
+
 use derive_more::From;
+
+use crate::LineCol;
 
 pub type Result<T> = core::result::Result<T, Error>;
 
@@ -6,7 +10,7 @@ pub type Result<T> = core::result::Result<T, Error>;
 pub enum Error {
     InvalidPosition,
     ExitCall,
-    InvalidRange,
+    InvalidRange(LineCol, LineCol),
     InvalidLineNumber,
     InvalidInput,
     PatternNotFound,
