@@ -6,33 +6,94 @@ mod cursor;
 mod editor;
 mod error;
 mod viewport;
+use std::{fs::File, sync::Mutex};
+
 use buffer::VecBuffer;
+use clap::Parser;
 pub use common::*;
+use editor::Editor;
 pub use tracing::{error, info, span, warn, Instrument};
-use tracing_subscriber::layer::SubscriberExt;
-pub use tracing_subscriber::{filter::EnvFilter, prelude::*, Layer};
+pub use tracing_subscriber::{filter::EnvFilter, fmt::Subscriber, prelude::*, Layer};
 pub use tracing_tree::HierarchicalLayer;
 
+#[derive(Parser, Debug)]
+#[command(name = "neotext")]
+struct Cli {
+    #[arg(short, long)]
+    debug: bool,
+
+    // Open neotext on the the dedcicated testfile
+    #[arg(short = 't', long)]
+    test: bool,
+
+    // Read File on given path, this argument is the default argument being passed
+    #[arg(default_value = "")]
+    file: String,
+}
+
 fn main() {
-    setup_tracing();
-    let mut instance = editor::Editor::new(VecBuffer::new(vec![" ".to_string()]), false);
+    let cli = Cli::parse();
+    setup_tracing(cli.debug);
+
+    let mut instance = initialize_editor(&cli);
+
     match instance.run_event_loop() {
         Err(Error::ExitCall) => info!("Quitting due to ExitCall"),
         _ => error!("Unexpected end to our journey"),
     }
 }
 
-fn setup_tracing() {
-    let filter = EnvFilter::try_new("info, your_crate_name = trace, crossterm = off")
+fn initialize_editor(cli: &Cli) -> Editor<VecBuffer> {
+    if cli.test {
+        return new_from_file(&"./test_file.neotext".into());
+    }
+
+    if cli.file.is_empty() {
+        editor::Editor::new(VecBuffer::new(vec![" ".to_string()]), false)
+    } else {
+        new_from_file(&cli.file.clone().into())
+    }
+}
+
+pub fn new_from_file(p: &std::path::PathBuf) -> Editor<VecBuffer> {
+    let content = match std::fs::read(p) {
+        Err(e) => panic!("Invalid path: {:?}, exception: {}", p, e),
+        Ok(content) => content,
+    };
+    Editor::new(
+        VecBuffer::new(
+            String::from_utf8(content)
+                .expect("Invalid utf8 file")
+                .lines()
+                .map(String::from)
+                .collect(),
+        ),
+        false,
+    )
+}
+fn setup_tracing(debug: bool) {
+    let filter = EnvFilter::try_new("info, neotext = trace, crossterm = off")
         .unwrap_or_else(|_| EnvFilter::new("info"));
 
-    tracing_subscriber::registry()
-        .with(
-            HierarchicalLayer::new(2)
-                .with_writer(std::io::stderr)
-                .with_targets(true)
-                .with_bracketed_fields(true),
-        )
+    let stderr_layer = HierarchicalLayer::new(2)
+        .with_writer(std::io::stderr)
+        .with_targets(true)
+        .with_bracketed_fields(true);
+
+    let subscriber = tracing_subscriber::registry()
         .with(filter)
-        .init();
+        .with(stderr_layer);
+
+    if debug {
+        let file = File::create("dbg").expect("Failed to create debug log file");
+        let file_layer = HierarchicalLayer::new(2)
+            .with_writer(file)
+            .with_targets(true)
+            .with_bracketed_fields(true)
+            .with_ansi(false);
+
+        subscriber.with(file_layer).init();
+    } else {
+        subscriber.init();
+    }
 }
