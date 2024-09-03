@@ -8,9 +8,8 @@ use crossterm::{
 };
 
 const NO_OF_BARS: u8 = 2;
-pub const LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS: usize = 4;
+pub const LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS: usize = 2;
 pub const LINE_NUMBER_RESERVED_COLUMNS: usize = 5;
-pub const CURSOR_DIST_TO_LINE_NUMBERS: usize = 1;
 
 #[derive(Debug)]
 pub struct ViewPort {
@@ -106,7 +105,7 @@ impl ViewPort {
             crossterm::cursor::MoveTo(
                 cursor.col() as u16
                     + LINE_NUMBER_RESERVED_COLUMNS as u16
-                    + CURSOR_DIST_TO_LINE_NUMBERS as u16,
+                    + LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS as u16,
                 (cursor.line() - self.top_border) as u16,
             )
         )?;

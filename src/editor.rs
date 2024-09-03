@@ -95,6 +95,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         }
         Ok(())
     }
+
     fn interpret_normal_event(&mut self, key_event: KeyEvent) -> Result<Action> {
         let action = if let Some(prev) = self.previous_key.take() {
             match (prev, key_event.code) {
