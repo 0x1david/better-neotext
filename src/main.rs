@@ -6,7 +6,7 @@ mod cursor;
 mod editor;
 mod error;
 mod viewport;
-use std::{fs::File, sync::Mutex};
+use std::{fs::File, panic, sync::Mutex};
 
 use buffer::VecBuffer;
 use clap::Parser;
@@ -34,6 +34,26 @@ struct Cli {
 fn main() {
     let cli = Cli::parse();
     setup_tracing(cli.debug);
+
+    // Capture Panics
+    panic::set_hook(Box::new(|panic_info| {
+        let (filename, line) = panic_info
+            .location()
+            .map(|loc| (loc.file(), loc.line()))
+            .unwrap_or(("<unknown>", 0));
+
+        let cause = panic_info
+            .payload()
+            .downcast_ref::<String>()
+            .map(|s| s.as_str())
+            .or_else(|| panic_info.payload().downcast_ref::<&str>().copied())
+            .unwrap_or("<cause unknown>");
+
+        error!(
+            "Panic occurred in file '{}' at line {}: {}",
+            filename, line, cause
+        );
+    }));
 
     let mut instance = initialize_editor(&cli);
 

@@ -25,8 +25,8 @@ impl Component for ViewPort {
     fn execute_action(&mut self, a: &BaseAction) -> Result<()> {
         println!("Executing Action at Viewport: {:?}", a);
         match a {
-            BaseAction::MoveUp(dist) => self.move_up(*dist),
-            BaseAction::MoveDown(dist) => self.move_down(*dist),
+            BaseAction::MoveUp(dist) => self.scroll_up(*dist),
+            BaseAction::MoveDown(dist) => self.scroll_down(*dist),
             _ => (),
         };
         Ok(())
@@ -34,11 +34,17 @@ impl Component for ViewPort {
 }
 
 impl ViewPort {
-    fn move_up(&mut self, dist: usize) {
-        self.top_border -= dist;
-        self.bottom_border -= dist;
+    fn scroll_up(&mut self, dist: usize) {
+        let actual_move = if self.top_border >= dist {
+            dist
+        } else {
+            self.top_border
+        };
+
+        self.top_border -= actual_move;
+        self.bottom_border -= actual_move;
     }
-    fn move_down(&mut self, dist: usize) {
+    fn scroll_down(&mut self, dist: usize) {
         self.top_border += dist;
         self.bottom_border += dist;
     }
@@ -106,7 +112,7 @@ impl ViewPort {
                 cursor.col() as u16
                     + LINE_NUMBER_RESERVED_COLUMNS as u16
                     + LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS as u16,
-                (cursor.line() - self.top_border) as u16,
+                (cursor.line().saturating_sub(self.top_border)) as u16,
             )
         )?;
 

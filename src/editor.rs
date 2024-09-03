@@ -7,7 +7,7 @@ use crate::{
     BaseAction, Command, Component, Error, FindMode, LineCol, Modal, Pattern, Result,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use tracing::{info, instrument, span, warn, Level};
+use tracing::{debug, info, instrument, span, warn, Level};
 
 const JUMP_DIST: usize = 25;
 
@@ -266,6 +266,14 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             altered = true;
         }
 
+        // We need to do these actions in advance if movement command is vertical to have the col
+        // bound checking working
+        if matches!(action, BaseAction::MoveUp(_) | BaseAction::MoveDown(_)) && !altered {
+            warn!("Moving vertically in advance...");
+            self.cursor.execute_action(action)?;
+            altered = true;
+        }
+
         // Col bound checking
         if self.shadow_cursor.col > self.buffer.max_col(self.shadow_cursor.line as usize) as i64 {
             warn!("Exceeding maximum col, altering action...");
@@ -286,7 +294,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         }
 
         if !altered {
-            warn!("executing unaltered action...");
+            info!("executing unaltered action...");
             self.delegate_action(action)?
         };
 
@@ -308,11 +316,15 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             Action::JumpUp => ok_vec![BaseAction::MoveUp(JUMP_DIST)],
             Action::JumpDown => ok_vec![BaseAction::MoveDown(JUMP_DIST)],
             Action::JumpSOL => ok_vec![BaseAction::MoveLeft(self.cursor.col())],
-            Action::JumpEOL => ok_vec![BaseAction::MoveRight(
-                self.buffer.max_col(self.cursor.line()) - self.cursor.col(),
-            )],
+            Action::JumpEOL => ok_vec![
+                BaseAction::MoveLeft(self.cursor.col()),
+                BaseAction::MoveRight(self.buffer.max_col(self.cursor.line()))
+            ],
             Action::JumpSOF => ok_vec![BaseAction::MoveUp(self.cursor.line())],
-            Action::JumpEOF => ok_vec![BaseAction::MoveDown(self.buffer.max_line())],
+            Action::JumpEOF => ok_vec![
+                BaseAction::MoveUp(self.cursor.line()),
+                BaseAction::MoveDown(self.buffer.max_line())
+            ],
 
             // Word and symbol navigation
             Action::JumpToNextWord => ok_vec![self.jump_two_boundaries(

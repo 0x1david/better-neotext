@@ -1,4 +1,4 @@
-use tracing::instrument;
+use tracing::{debug, instrument};
 
 use crate::{BaseAction, Component, LineCol, Modal};
 
@@ -55,8 +55,8 @@ impl Component for ShadowCursor {
     #[instrument]
     fn execute_action(&mut self, a: &BaseAction) -> crate::Result<()> {
         match a {
-            BaseAction::MoveUp(dist) => self.line += *dist as i64,
-            BaseAction::MoveDown(dist) => self.line -= *dist as i64,
+            BaseAction::MoveUp(dist) => self.line -= *dist as i64,
+            BaseAction::MoveDown(dist) => self.line += *dist as i64,
             BaseAction::MoveLeft(dist) => self.col -= *dist as i64,
             BaseAction::MoveRight(dist) => self.col += *dist as i64,
             BaseAction::SetCursor(lc) => self.update(*lc),
