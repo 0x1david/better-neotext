@@ -6,7 +6,7 @@ mod cursor;
 mod editor;
 mod error;
 mod viewport;
-use std::{fs::File, panic, sync::Mutex};
+use std::{fs::File, panic};
 
 use buffer::VecBuffer;
 use clap::Parser;
@@ -104,6 +104,7 @@ fn setup_tracing(debug: bool) {
         .with(filter)
         .with(stderr_layer);
 
+    // Set debug to automatically output to a dbg file
     if debug {
         let file = File::create("dbg").expect("Failed to create debug log file");
         let file_layer = HierarchicalLayer::new(2)

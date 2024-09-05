@@ -1,4 +1,4 @@
-use tracing::{debug, instrument};
+use tracing::instrument;
 
 use crate::{BaseAction, Component, LineCol, Modal};
 
@@ -97,7 +97,7 @@ impl Cursor {
     #[inline]
     pub fn go(&mut self, to: &LineCol) {
         self.previous_pos = self.pos;
-        self.pos = to.clone();
+        self.pos = *to;
     }
     #[inline]
     pub const fn line(&self) -> usize {
@@ -168,7 +168,7 @@ impl Cursor {
         }
 
         match modal {
-            Modal::Command | Modal::Find(_) => {
+            Modal::Command | Modal::Find => {
                 self.plane = CursorPlane::CommandBar;
                 self.pos = LineCol { line: 0, col: 0 };
             }

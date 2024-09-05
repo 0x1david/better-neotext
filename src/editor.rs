@@ -1,10 +1,11 @@
 use std::{borrow::Cow, collections::VecDeque, fmt::Debug};
 
 use crate::{
+    bars::force_notif_bar_content,
     buffer::TextBuffer,
     cursor::{Cursor, ShadowCursor},
     viewport::ViewPort,
-    BaseAction, Command, Component, Error, FindMode, LineCol, Modal, Pattern, Result,
+    BaseAction, Command, Component, Error, LineCol, Modal, Pattern, Result,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
 use tracing::{info, instrument, span, warn, Level};
@@ -26,6 +27,7 @@ pub struct Editor<Buff: TextBuffer> {
     repeat_action: usize,
     previous_key: Option<char>,
     cursor: Cursor,
+    command_cursor_x_coord: usize,
     shadow_cursor: ShadowCursor,
     extensions: Vec<Box<dyn Component>>,
 }
@@ -68,6 +70,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             repeat_action: 1,
             previous_key: None,
             cursor: Cursor::default(),
+            command_cursor_x_coord: 0,
             extensions: Vec::new(),
             shadow_cursor: ShadowCursor { line: 0, col: 0 },
         }
@@ -76,13 +79,17 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         let span = span!(Level::INFO, "event_loop");
         let _guard = span.enter();
         loop {
+            let command_buf = self.buffer.get_command_text();
+            if !command_buf.is_empty() {
+                force_notif_bar_content(command_buf.to_string());
+            }
             self.viewport
                 .update_viewport(self.buffer.get_entire_text(), &self.cursor)?;
             if let Event::Key(key_event) = event::read()? {
                 let action = match self.modal {
                     Modal::Normal => self.interpret_normal_event(key_event),
                     Modal::Insert => self.interpret_insert_event(key_event),
-                    Modal::Command => self.interpret_command_event(key_event),
+                    Modal::Command | Modal::Find => self.interpret_command_event(key_event),
                     _ => continue,
                 }?;
 
@@ -153,12 +160,8 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 }
 
                 // Text Search
-                (KeyCode::Char('/'), KeyModifiers::NONE) => {
-                    Action::ChangeMode(Modal::Find(FindMode::Forwards))
-                }
-                (KeyCode::Char('?'), KeyModifiers::NONE) => {
-                    Action::ChangeMode(Modal::Find(FindMode::Backwards))
-                }
+                (KeyCode::Char('/'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find),
+                (KeyCode::Char('?'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find),
 
                 // Text Manipulation
                 (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertModeBelow,
@@ -197,11 +200,37 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         };
         Ok(action)
     }
+    fn parse_out_command(&self) -> Command {
+        let mut buf = self.buffer.get_command_text();
+        let first_ch = buf.chars().next();
+        buf = &buf[1..];
+
+        // Parse Command Type
+        if let Some(prefix) = first_ch {
+            match prefix {
+                '/' => return Command::Find(buf[1..].to_string()),
+                '?' => return Command::Rfind(buf[1..].to_string()),
+                ':' => (),
+                _ => return Command::None,
+            }
+        } else {
+            return Command::None;
+        };
+
+        // Interpret Command
+        match buf {
+            "q" => Command::Exit,
+            _ => Command::None,
+        }
+    }
 
     fn interpret_command_event(&self, key_event: KeyEvent) -> Result<Action> {
         let action = match key_event.code {
-            // Enter will execute different commands for command/find and rfind
-            KeyCode::Enter => Action::ExecuteCommand(Command::Find),
+            // Enter will execute different commands based on the parsing of the executecommand/find and rfind
+            KeyCode::Enter => {
+                let command = self.parse_out_command();
+                Action::ExecuteCommand(command)
+            }
             KeyCode::Char(c) => Action::InsertCharAtCursor(c),
             KeyCode::Up => Action::BumpUp,
             KeyCode::Down => Action::BumpDown,
@@ -436,9 +465,55 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 BaseAction::InsertLineAt(lazy!(), 1),
                 BaseAction::MoveDown(1)
             ],
-            Action::ExecuteCommand(_command) => unimplemented!(),
             Action::FetchFromHistory => ok_vec![BaseAction::FetchFromHistory],
+            Action::ExecuteCommand(c) => self.resolve_command_action(c),
         }
+    }
+    fn resolve_command_action(&self, c: Command) -> Result<Vec<BaseAction>> {
+        match c {
+            Command::Exit => Err(Error::ExitCall),
+            Command::Find(s) => {
+                let lc = self.find(s, self.cursor.pos);
+
+                match lc {
+                    Err(Error::PatternNotFound) => ok_vec!(BaseAction::ChangeMode(Modal::Normal)),
+                    Ok(target) => self.calculate_jump_actions(target),
+                    Err(e) => Err(e),
+                }
+            }
+            Command::Rfind(s) => {
+                let lc = self.find(s, self.cursor.pos);
+
+                match lc {
+                    Err(Error::PatternNotFound) => ok_vec!(BaseAction::ChangeMode(Modal::Normal)),
+                    Ok(target) => self.calculate_jump_actions(target),
+                    Err(e) => Err(e),
+                }
+            }
+            Command::None => ok_vec![BaseAction::ChangeMode(Modal::Normal)],
+        }
+    }
+
+    fn calculate_jump_actions(&self, target: LineCol) -> Result<Vec<BaseAction>> {
+        let mut action_vec = vec![];
+        let from = self.cursor.pos;
+
+        action_vec.push(BaseAction::MoveLeft(self.cursor.col()));
+
+        match from.line.cmp(&target.line) {
+            std::cmp::Ordering::Less => {
+                action_vec.push(BaseAction::MoveUp(target.line - from.line))
+            }
+            std::cmp::Ordering::Greater => {
+                action_vec.push(BaseAction::MoveDown(from.line - target.line))
+            }
+            std::cmp::Ordering::Equal => (),
+        };
+
+        action_vec.push(BaseAction::MoveRight(target.col));
+        action_vec.push(BaseAction::ChangeMode(Modal::Normal));
+
+        Ok(action_vec)
     }
     /// Resolves the input action and adds corresponding BaseActions to the queue
     #[instrument]

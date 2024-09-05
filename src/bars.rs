@@ -195,6 +195,10 @@ pub fn get_notif_bar_content() -> String {
         .pop_front()
         .unwrap_or_default()
 }
+/// Forces a messaage to the front of a notif_bar queue
+pub fn force_notif_bar_content(s: String) {
+    get_debug_messages().lock().unwrap().push_front(s);
+}
 
 /// Draws the information bar at the bottom of the editor.
 ///

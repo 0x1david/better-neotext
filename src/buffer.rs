@@ -1,6 +1,6 @@
 use tracing::instrument;
 
-use crate::{editor::Lazy, BaseAction, Component, Error, LineCol, Modal, Pattern, Result};
+use crate::{editor::Lazy, BaseAction, Component, Error, LineCol, Modal, Result};
 use std::{collections::VecDeque, fmt::Debug};
 
 /// Trait defining the interface for a text buffer
@@ -71,7 +71,7 @@ pub trait TextBuffer {
     /// Get the entire text for the terminal buffer
     fn get_terminal_text(&self) -> &str;
     /// Get the entire text for the command buffer
-    fn get_command_text(&self) -> &[String];
+    fn get_command_text(&self) -> &str;
     /// Get the entire text for the command buffer
     fn replace_command_text(&mut self, new: impl Into<String>);
 
@@ -194,6 +194,10 @@ impl<T: TextBuffer + Debug> Component for T {
                 self.insert_newline(start);
                 Ok(())
             }
+            BaseAction::ChangeMode(modal) => {
+                self.set_plane(modal);
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
@@ -286,7 +290,7 @@ impl TextBuffer for VecBuffer {
     }
     fn set_plane(&mut self, modal: &Modal) {
         self.plane = match modal {
-            Modal::Command | Modal::Find(_) => BufferPlane::Command,
+            Modal::Command | Modal::Find => BufferPlane::Command,
             Modal::Normal | Modal::Insert | Modal::Visual | Modal::VisualLine => {
                 BufferPlane::Normal
             }
@@ -650,8 +654,8 @@ impl TextBuffer for VecBuffer {
     fn get_normal_text(&self) -> &[String] {
         &self.text
     }
-    fn get_command_text(&self) -> &[String] {
-        &self.command
+    fn get_command_text(&self) -> &str {
+        &self.command[0]
     }
     fn get_terminal_text(&self) -> &str {
         &self.terminal[0]

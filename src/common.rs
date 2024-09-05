@@ -254,7 +254,7 @@ pub enum Modal {
     Insert,
     Visual,
     VisualLine,
-    Find(FindMode),
+    Find,
     Command,
 }
 
@@ -266,8 +266,7 @@ impl Display for Modal {
             Self::VisualLine => "VISUAL_LINE",
             Self::Command => "COMMAND",
             Self::Normal => "NORMAL",
-            Self::Find(FindMode::Forwards) => "FW_FIND",
-            Self::Find(FindMode::Backwards) => "BW_FIND",
+            Self::Find => "FIND",
         };
         write!(f, "{}", repr)
     }
@@ -289,27 +288,15 @@ impl Modal {
     pub fn is_command(&self) -> bool {
         matches!(&self, Modal::Command)
     }
-    pub fn is_any_find(&self) -> bool {
-        matches!(&self, Modal::Find(_))
+    pub fn is_find(&self) -> bool {
+        matches!(&self, Modal::Find)
     }
-    pub fn is_forwards_find(&self) -> bool {
-        matches!(&self, Modal::Find(FindMode::Forwards))
-    }
-    pub fn is_backwards_find(&self) -> bool {
-        matches!(&self, Modal::Find(FindMode::Backwards))
-    }
-}
-
-#[derive(Default, Debug, PartialEq, Eq, Clone, Copy)]
-pub enum FindMode {
-    #[default]
-    Forwards,
-    Backwards,
 }
 
 #[derive(Clone, Debug)]
 pub enum Command {
-    Find,
-    Rfind,
-    Leave,
+    Find(String),
+    Rfind(String),
+    Exit,
+    None,
 }
