@@ -1,4 +1,8 @@
-use crate::{cursor::Cursor, BaseAction, Component, Modal, Result, Selection};
+use crate::{
+    bars::{draw_bar, get_info_bar_content, get_notif_bar_content, INFO_BAR, NOTIFICATION_BAR},
+    cursor::Cursor,
+    BaseAction, Component, Modal, Result, Selection,
+};
 use std::io::{self, Stdout, Write};
 
 use crossterm::{
@@ -25,6 +29,7 @@ impl Component for ViewPort {
     fn execute_action(&mut self, a: &BaseAction) -> Result<()> {
         println!("Executing Action at Viewport: {:?}", a);
         match a {
+            BaseAction::ChangeMode(modal) => self.mode = *modal,
             _ => (),
             BaseAction::MoveUp(dist) => self.scroll_up(*dist),
             BaseAction::MoveDown(dist) => self.scroll_down(*dist),
@@ -106,6 +111,14 @@ impl ViewPort {
             self.create_line_numbers(line_number + 1, cursor.line())?;
             self.draw_line(line, line_number, cursor)?;
         }
+
+        draw_bar(&INFO_BAR, |term_width, term_height| {
+            get_info_bar_content(term_width, &self.mode, cursor.pos)
+        })?;
+        draw_bar(&NOTIFICATION_BAR, |term_width, term_height| {
+            get_notif_bar_content()
+        })?;
+
         execute!(
             self.terminal,
             crossterm::cursor::MoveTo(

@@ -7,7 +7,7 @@ use crate::{
     BaseAction, Command, Component, Error, FindMode, LineCol, Modal, Pattern, Result,
 };
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyModifiers};
-use tracing::{debug, info, instrument, span, warn, Level};
+use tracing::{info, instrument, span, warn, Level};
 
 const JUMP_DIST: usize = 25;
 
@@ -124,9 +124,13 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 (KeyCode::Char('u'), KeyModifiers::CONTROL) => Action::JumpUp,
                 (KeyCode::Char('d'), KeyModifiers::CONTROL) => Action::JumpDown,
 
-                (KeyCode::Char('W'), KeyModifiers::NONE) => Action::JumpToNextWord,
+                (KeyCode::Char('W'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                    Action::JumpToNextWord
+                }
                 (KeyCode::Char('w'), KeyModifiers::NONE) => Action::JumpToNextSymbol,
-                (KeyCode::Char('B'), KeyModifiers::NONE) => Action::ReverseJumpToNextWord,
+                (KeyCode::Char('B'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                    Action::ReverseJumpToNextWord
+                }
                 (KeyCode::Char('b'), KeyModifiers::NONE) => Action::ReverseJumpToNextSymbol,
                 (KeyCode::Char('_'), KeyModifiers::NONE) => Action::JumpSOL,
                 (KeyCode::Home, KeyModifiers::NONE) => Action::JumpSOL,
@@ -135,14 +139,18 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 (KeyCode::Esc, KeyModifiers::NONE) => return Err(Error::ExitCall), // TODO: Remove after
                 // debugging finished
                 (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF,
-                (KeyCode::Char('G'), KeyModifiers::NONE) => Action::JumpEOF,
+                (KeyCode::Char('G'), KeyModifiers::NONE | KeyModifiers::SHIFT) => Action::JumpEOF,
 
                 // Mode Changes
                 (KeyCode::Char('i'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Insert),
                 (KeyCode::Char('v'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Visual),
-                (KeyCode::Char('V'), KeyModifiers::NONE) => Action::ChangeMode(Modal::VisualLine),
+                (KeyCode::Char('V'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                    Action::ChangeMode(Modal::VisualLine)
+                }
                 (KeyCode::Char(':'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Command),
-                (KeyCode::Char('A'), KeyModifiers::NONE) => Action::InsertModeEOL,
+                (KeyCode::Char('A'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                    Action::InsertModeEOL
+                }
 
                 // Text Search
                 (KeyCode::Char('/'), KeyModifiers::NONE) => {
@@ -155,7 +163,9 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 // Text Manipulation
                 (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertModeBelow,
                 (KeyCode::Char('O'), KeyModifiers::NONE) => Action::InsertModeAbove,
-                (KeyCode::Char('X'), KeyModifiers::NONE) => Action::DeleteBeforeCursor,
+                (KeyCode::Char('X'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                    Action::DeleteBeforeCursor
+                }
                 (KeyCode::Char('x'), KeyModifiers::NONE) => Action::DeleteAtCursor,
 
                 // Undo/Redo

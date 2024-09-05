@@ -217,8 +217,8 @@ pub fn get_notif_bar_content() -> String {
 /// - Writing to stdout fails
 /// - Color setting or resetting fails
 pub fn get_info_bar_content(term_width: usize, mode: &Modal, pos: LineCol) -> String {
+    let mut pos = pos;
     let modal_string = format!("{mode}");
-    let mut pos = pos.clone();
     pos.line += 1;
     let pos_string = format!("{pos}");
 
