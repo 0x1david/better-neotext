@@ -19,7 +19,7 @@ pub const LINE_NUMBER_RESERVED_COLUMNS: usize = 5;
 pub struct ViewPort {
     terminal: Stdout,
     width: u16,
-    height: u16,
+    pub height: u16,
     top_border: usize,
     bottom_border: usize,
     mode: Modal,
@@ -119,15 +119,18 @@ impl ViewPort {
             get_notif_bar_content()
         })?;
 
-        execute!(
-            self.terminal,
-            crossterm::cursor::MoveTo(
-                cursor.col() as u16
+        let (line, col) = match self.mode {
+            Modal::Find | Modal::Command => (self.bottom_border as u16, cursor.col() as u16),
+            _ => {
+                let line = (cursor.line().saturating_sub(self.top_border)) as u16;
+                let col = cursor.col() as u16
                     + LINE_NUMBER_RESERVED_COLUMNS as u16
-                    + LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS as u16,
-                (cursor.line().saturating_sub(self.top_border)) as u16,
-            )
-        )?;
+                    + LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS as u16;
+                (line, col)
+            }
+        };
+
+        execute!(self.terminal, crossterm::cursor::MoveTo(col, line))?;
 
         Ok(())
     }

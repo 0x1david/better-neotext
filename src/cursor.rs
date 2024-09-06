@@ -75,6 +75,7 @@ impl Component for Cursor {
             BaseAction::MoveLeft(dist) => self.move_left(dist),
             BaseAction::MoveRight(dist) => self.jump_right(dist),
             BaseAction::SetCursor(lc) => self.go(lc),
+            BaseAction::ChangeMode(modal) => self.mod_change(modal),
             _ => (),
         };
         Ok(())
