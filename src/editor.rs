@@ -84,7 +84,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 force_notif_bar_content(command_buf.to_string());
             }
             self.viewport
-                .update_viewport(self.buffer.get_entire_text(), &self.cursor)?;
+                .update_viewport(self.buffer.get_normal_text(), &self.cursor)?;
             if let Event::Key(key_event) = event::read()? {
                 let action = match self.modal {
                     Modal::Normal => self.interpret_normal_event(key_event),

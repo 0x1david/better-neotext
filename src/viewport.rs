@@ -1,5 +1,8 @@
 use crate::{
-    bars::{draw_bar, get_info_bar_content, get_notif_bar_content, INFO_BAR, NOTIFICATION_BAR},
+    bars::{
+        draw_bar, get_info_bar_content, get_notif_bar_content, INFO_BAR, NOTIFICATION_BAR,
+        NOTIFICATION_BAR_TEXT_X_LOCATION,
+    },
     cursor::Cursor,
     BaseAction, Component, Modal, Result, Selection,
 };
@@ -120,7 +123,10 @@ impl ViewPort {
         })?;
 
         let (line, col) = match self.mode {
-            Modal::Find | Modal::Command => (self.bottom_border as u16, cursor.col() as u16),
+            Modal::Find | Modal::Command => (
+                self.bottom_border as u16,
+                cursor.col() as u16 + NOTIFICATION_BAR_TEXT_X_LOCATION,
+            ),
             _ => {
                 let line = (cursor.line().saturating_sub(self.top_border)) as u16;
                 let col = cursor.col() as u16

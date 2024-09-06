@@ -151,7 +151,7 @@ pub struct VecBuffer {
     plane: BufferPlane,
 }
 
-#[derive(Default, Debug, Clone, Copy)]
+#[derive(Default, Debug, Clone, Copy, PartialEq)]
 enum BufferPlane {
     #[default]
     Normal,
@@ -282,8 +282,7 @@ impl TextBuffer for VecBuffer {
         let _ = self.text.remove(at);
     }
     fn clear_command(&mut self) {
-        self.command.clear();
-        self.command.push(String::new());
+        self.command[0] = String::new()
     }
     fn is_command_empty(&self) -> bool {
         self.command[0].is_empty()
@@ -292,6 +291,7 @@ impl TextBuffer for VecBuffer {
         self.plane = match modal {
             Modal::Command | Modal::Find => BufferPlane::Command,
             Modal::Normal | Modal::Insert | Modal::Visual | Modal::VisualLine => {
+                self.clear_command();
                 BufferPlane::Normal
             }
         };
@@ -312,10 +312,14 @@ impl TextBuffer for VecBuffer {
         self.get_mut_buffer().insert(at.line + 1, String::new());
     }
     fn insert(&mut self, at: LineCol, ch: char) -> Result<()> {
-        if at.line > self.get_buffer().len() || at.col > self.get_buffer()[at.line].len() {
-            return Err(Error::InvalidPosition);
+        if self.plane == BufferPlane::Command {
+            self.command[0].insert(at.col, ch)
+        } else {
+            if at.line > self.get_buffer().len() || at.col > self.get_buffer()[at.line].len() {
+                return Err(Error::InvalidPosition);
+            }
+            self.get_mut_buffer()[at.line].insert(at.col, ch);
         }
-        self.get_mut_buffer()[at.line].insert(at.col, ch);
         Ok(())
     }
     /// Performs a redo operation, moving the current state to the next future state if available.
