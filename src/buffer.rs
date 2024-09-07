@@ -1,6 +1,9 @@
 use tracing::instrument;
 
-use crate::{editor::Lazy, BaseAction, Component, Error, LineCol, Modal, Result};
+use crate::{
+    editor::Lazy, viewport::FIND_MODE_DIRECTION_SYMBOL_GAP, BaseAction, Component, Error,
+    FindDirection, LineCol, Modal, Result,
+};
 use std::{collections::VecDeque, fmt::Debug};
 
 /// Trait defining the interface for a text buffer
@@ -79,8 +82,11 @@ pub trait TextBuffer {
     fn max_line(&self) -> usize;
     /// Get maximum column bound for the current buffer
     fn max_col(&self, at: usize) -> usize;
+    fn max_normal_col(&self, at: usize) -> usize;
     fn is_command_empty(&self) -> bool;
     fn clear_command(&mut self);
+    /// Adjust column for Modal requirements
+    fn adjust_col(&self, col: usize) -> usize;
     fn max_linecol(&self) -> LineCol;
     fn delete_line(&mut self, at: usize);
     fn get_full_lines_buffer_window(
@@ -157,6 +163,7 @@ enum BufferPlane {
     Normal,
     Terminal,
     Command,
+    Find,
 }
 
 impl Default for VecBuffer {
@@ -178,9 +185,11 @@ impl<T: TextBuffer + Debug> Component for T {
         match a {
             BaseAction::InsertAt(lc, ch) => self.insert(lc.clone_inner(), *ch),
             BaseAction::DeleteAt(lc, rep) => {
-                let start = self.verify_lazy_values(lc)?;
+                let mut start = self.verify_lazy_values(lc)?;
                 let mut end = start;
                 end.col += rep;
+                end.col = self.adjust_col(end.col);
+                start.col = self.adjust_col(start.col);
                 self.delete_selection(start, end)
             }
             BaseAction::DeleteLineAt(lc, rep) => {
@@ -218,19 +227,26 @@ impl VecBuffer {
         match &self.plane {
             BufferPlane::Normal => &mut self.text,
             BufferPlane::Terminal => &mut self.terminal,
-            BufferPlane::Command => &mut self.command,
+            BufferPlane::Command | BufferPlane::Find => &mut self.command,
         }
     }
     fn get_buffer(&self) -> &[String] {
         match &self.plane {
             BufferPlane::Normal => &self.text,
             BufferPlane::Terminal => &self.terminal,
-            BufferPlane::Command => &self.command,
+            BufferPlane::Command | BufferPlane::Find => &self.command,
         }
     }
 }
 
 impl TextBuffer for VecBuffer {
+    fn adjust_col(&self, col: usize) -> usize {
+        if matches!(self.plane, BufferPlane::Find) {
+            col + FIND_MODE_DIRECTION_SYMBOL_GAP as usize
+        } else {
+            col
+        }
+    }
     // Gets only partial buffer from a position to a position
     fn get_buffer_window(&self, from: Option<LineCol>, to: Option<LineCol>) -> Result<Vec<String>> {
         if from.is_none() && to.is_none() {
@@ -239,6 +255,7 @@ impl TextBuffer for VecBuffer {
         let from = from.unwrap_or(LineCol { line: 0, col: 0 });
         let mut to = to.unwrap_or_else(|| self.max_linecol());
         to.line = self.max_line().min(to.line);
+
         if from.line > to.line || (from.line == to.line && from.col > to.col) {
             return Err(Error::InvalidInput);
         }
@@ -289,7 +306,14 @@ impl TextBuffer for VecBuffer {
     }
     fn set_plane(&mut self, modal: &Modal) {
         self.plane = match modal {
-            Modal::Command | Modal::Find => BufferPlane::Command,
+            Modal::Command => BufferPlane::Command,
+            Modal::Find(direction) => {
+                match direction {
+                    FindDirection::Forwards => self.command[0].push('/'),
+                    FindDirection::Backwards => self.command[0].push('?'),
+                };
+                BufferPlane::Find
+            }
             Modal::Normal | Modal::Insert | Modal::Visual | Modal::VisualLine => {
                 self.clear_command();
                 BufferPlane::Normal
@@ -298,6 +322,9 @@ impl TextBuffer for VecBuffer {
     }
     fn max_col(&self, at: usize) -> usize {
         self.get_buffer()[at].len()
+    }
+    fn max_normal_col(&self, at: usize) -> usize {
+        self.get_normal_text()[at].len()
     }
     fn max_line(&self) -> usize {
         self.get_normal_text().len().saturating_sub(1)
@@ -312,13 +339,17 @@ impl TextBuffer for VecBuffer {
         self.get_mut_buffer().insert(at.line + 1, String::new());
     }
     fn insert(&mut self, at: LineCol, ch: char) -> Result<()> {
-        if self.plane == BufferPlane::Command {
-            self.command[0].insert(at.col, ch)
-        } else {
-            if at.line > self.get_buffer().len() || at.col > self.get_buffer()[at.line].len() {
-                return Err(Error::InvalidPosition);
+        match self.plane {
+            BufferPlane::Command => self.command[0].insert(at.col, ch),
+            BufferPlane::Find => {
+                self.command[0].insert(at.col + FIND_MODE_DIRECTION_SYMBOL_GAP as usize, ch)
             }
-            self.get_mut_buffer()[at.line].insert(at.col, ch);
+            _ => {
+                if at.line > self.get_buffer().len() || at.col > self.get_buffer()[at.line].len() {
+                    return Err(Error::InvalidPosition);
+                }
+                self.get_mut_buffer()[at.line].insert(at.col, ch);
+            }
         }
         Ok(())
     }

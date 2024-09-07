@@ -18,6 +18,8 @@ pub enum BaseAction {
     MoveDown(usize),
     MoveRight(usize),
     MoveLeft(usize),
+    // `SetCursor` should only ever be used when bound checking is not required
+    // It is NOT bound checked. For bound checked movement use `Move` commands
     SetCursor(LineCol),
 
     ChangeMode(Modal),
@@ -246,6 +248,12 @@ impl Selection {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Debug, Copy)]
+pub enum FindDirection {
+    Forwards,
+    Backwards,
+}
+
 /// Contains the main modal variants of the editor.
 #[derive(Clone, Copy, Default, Debug, PartialEq, Eq)]
 pub enum Modal {
@@ -254,7 +262,7 @@ pub enum Modal {
     Insert,
     Visual,
     VisualLine,
-    Find,
+    Find(FindDirection),
     Command,
 }
 
@@ -266,7 +274,8 @@ impl Display for Modal {
             Self::VisualLine => "VISUAL_LINE",
             Self::Command => "COMMAND",
             Self::Normal => "NORMAL",
-            Self::Find => "FIND",
+            Self::Find(FindDirection::Forwards) => "FORWARD FIND",
+            Self::Find(FindDirection::Backwards) => "BACKWARD FIND",
         };
         write!(f, "{}", repr)
     }
@@ -289,7 +298,13 @@ impl Modal {
         matches!(&self, Modal::Command)
     }
     pub fn is_find(&self) -> bool {
-        matches!(&self, Modal::Find)
+        matches!(&self, Modal::Find(_))
+    }
+    pub fn is_forwards_find(&self) -> bool {
+        matches!(&self, Modal::Find(FindDirection::Forwards))
+    }
+    pub fn is_backwards_find(&self) -> bool {
+        matches!(&self, Modal::Find(FindDirection::Backwards))
     }
 }
 

@@ -27,7 +27,6 @@ pub struct Editor<Buff: TextBuffer> {
     repeat_action: usize,
     previous_key: Option<char>,
     cursor: Cursor,
-    command_cursor_x_coord: usize,
     shadow_cursor: ShadowCursor,
     extensions: Vec<Box<dyn Component>>,
 }
@@ -70,7 +69,6 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             repeat_action: 1,
             previous_key: None,
             cursor: Cursor::default(),
-            command_cursor_x_coord: 0,
             extensions: Vec::new(),
             shadow_cursor: ShadowCursor { line: 0, col: 0 },
         }
@@ -86,10 +84,11 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             self.viewport
                 .update_viewport(self.buffer.get_normal_text(), &self.cursor)?;
             if let Event::Key(key_event) = event::read()? {
+                info!("Interpreting event: {:?}", key_event);
                 let action = match self.modal {
                     Modal::Normal => self.interpret_normal_event(key_event),
                     Modal::Insert => self.interpret_insert_event(key_event),
-                    Modal::Command | Modal::Find => self.interpret_command_event(key_event),
+                    Modal::Command | Modal::Find(_) => self.interpret_command_event(key_event),
                     _ => continue,
                 }?;
 
@@ -102,6 +101,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         }
     }
     fn consume_action_queue(&mut self) -> Result<()> {
+        info!("Contents of Action Queue: {:?}", self.action_queue);
         let actions: Vec<_> = self.action_queue.drain(..).collect();
         for action in actions {
             self.perform_action(action)?;
@@ -143,8 +143,6 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 (KeyCode::Home, KeyModifiers::NONE) => Action::JumpSOL,
                 (KeyCode::Char('$'), KeyModifiers::NONE) => Action::JumpEOL,
                 (KeyCode::End, KeyModifiers::NONE) => Action::JumpEOL,
-                (KeyCode::Esc, KeyModifiers::NONE) => return Err(Error::ExitCall), // TODO: Remove after
-                // debugging finished
                 (KeyCode::Char('g'), KeyModifiers::NONE) => Action::JumpSOF,
                 (KeyCode::Char('G'), KeyModifiers::NONE | KeyModifiers::SHIFT) => Action::JumpEOF,
 
@@ -160,8 +158,12 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 }
 
                 // Text Search
-                (KeyCode::Char('/'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find),
-                (KeyCode::Char('?'), KeyModifiers::NONE) => Action::ChangeMode(Modal::Find),
+                (KeyCode::Char('/'), KeyModifiers::NONE) => {
+                    Action::ChangeMode(Modal::Find(crate::FindDirection::Forwards))
+                }
+                (KeyCode::Char('?'), KeyModifiers::NONE) => {
+                    Action::ChangeMode(Modal::Find(crate::FindDirection::Backwards))
+                }
 
                 // Text Manipulation
                 (KeyCode::Char('o'), KeyModifiers::NONE) => Action::InsertModeBelow,
@@ -201,26 +203,24 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         Ok(action)
     }
     fn parse_out_command(&self) -> Command {
-        let mut buf = self.buffer.get_command_text();
+        let buf = self.buffer.get_command_text();
+        info!("Parsing out command: {}", buf);
         let first_ch = buf.chars().next();
-        buf = &buf[1..];
 
         // Parse Command Type
         if let Some(prefix) = first_ch {
+            let rest = &buf[1..];
             match prefix {
-                '/' => return Command::Find(buf[1..].to_string()),
-                '?' => return Command::Rfind(buf[1..].to_string()),
-                ':' => (),
-                _ => return Command::None,
+                '/' => Command::Find(rest.to_string()),
+                '?' => Command::Rfind(rest.to_string()),
+                // Interpret Command
+                _ => match buf {
+                    "q" => Command::Exit,
+                    _ => Command::None,
+                },
             }
         } else {
-            return Command::None;
-        };
-
-        // Interpret Command
-        match buf {
-            "q" => Command::Exit,
-            _ => Command::None,
+            Command::None
         }
     }
 
@@ -250,8 +250,11 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             BaseAction::MoveUp(_)
             | BaseAction::MoveDown(_)
             | BaseAction::MoveLeft(_)
-            | BaseAction::MoveRight(_)
-            | BaseAction::SetCursor(_) => self.delegate_action_bound_checked(&action),
+            | BaseAction::MoveRight(_) => self.delegate_action_bound_checked(&action),
+            chm @ BaseAction::ChangeMode(mode) => {
+                self.modal = mode;
+                self.delegate_action(&chm)
+            }
             otherwise => self.delegate_action(&otherwise),
         }
     }
@@ -415,7 +418,6 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
 
             // Mode change actions
             Action::ChangeMode(mode) => {
-                self.modal = mode;
                 ok_vec![BaseAction::ChangeMode(mode)]
             }
             Action::InsertModeEOL => {
@@ -472,8 +474,9 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
     fn resolve_command_action(&self, c: Command) -> Result<Vec<BaseAction>> {
         match c {
             Command::Exit => Err(Error::ExitCall),
+            Command::None => ok_vec![BaseAction::ChangeMode(Modal::Normal)],
             Command::Find(s) => {
-                let lc = self.find(s, self.cursor.pos);
+                let lc = self.find(s, self.cursor.last_text_mode_pos);
 
                 match lc {
                     Err(Error::PatternNotFound) => ok_vec!(BaseAction::ChangeMode(Modal::Normal)),
@@ -482,7 +485,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 }
             }
             Command::Rfind(s) => {
-                let lc = self.find(s, self.cursor.pos);
+                let lc = self.find(s, self.cursor.last_text_mode_pos);
 
                 match lc {
                     Err(Error::PatternNotFound) => ok_vec!(BaseAction::ChangeMode(Modal::Normal)),
@@ -490,15 +493,15 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                     Err(e) => Err(e),
                 }
             }
-            Command::None => ok_vec![BaseAction::ChangeMode(Modal::Normal)],
         }
     }
 
     fn calculate_jump_actions(&self, target: LineCol) -> Result<Vec<BaseAction>> {
         let mut action_vec = vec![];
-        let from = self.cursor.pos;
+        action_vec.push(BaseAction::ChangeMode(Modal::Normal));
+        let from = self.cursor.last_text_mode_pos;
 
-        action_vec.push(BaseAction::MoveLeft(self.cursor.col()));
+        action_vec.push(BaseAction::MoveLeft(self.cursor.text_mode_col()));
 
         match from.line.cmp(&target.line) {
             std::cmp::Ordering::Less => {
@@ -511,7 +514,6 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         };
 
         action_vec.push(BaseAction::MoveRight(target.col));
-        action_vec.push(BaseAction::ChangeMode(Modal::Normal));
 
         Ok(action_vec)
     }
@@ -540,7 +542,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         F: Fn(P, LineCol) -> Result<LineCol>,
         P: Pattern,
     {
-        // After Regex Implementation this part of the code will decide and convert
+        // TODO: After Regex Implementation this part of the code will decide and convert
         // pattern to regex if needed
         let pos = self.cursor.pos;
         let dest = match find_fn(pattern, pos) {
@@ -560,10 +562,10 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         F1: Fn(char) -> bool,
         F2: Fn(char) -> bool,
     {
-        let mut pos = self.cursor.pos;
+        let mut pos = self.cursor.last_text_mode_pos;
 
         // Avoid getting stuck if jump destination is directly on cursor
-        if self.buffer.max_col(pos.line) > pos.col {
+        if self.buffer.max_normal_col(pos.line) > pos.col {
             pos.col += 1;
         }
 

@@ -115,6 +115,10 @@ impl Cursor {
     pub const fn col(&self) -> usize {
         self.pos.col
     }
+    #[inline]
+    pub const fn text_mode_col(&self) -> usize {
+        self.last_text_mode_pos.col
+    }
 
     #[inline]
     pub fn set_col(&mut self, new: usize) {
@@ -169,7 +173,7 @@ impl Cursor {
         }
 
         match modal {
-            Modal::Command | Modal::Find => {
+            Modal::Command | Modal::Find(_) => {
                 self.plane = CursorPlane::CommandBar;
                 self.pos = LineCol { line: 0, col: 0 };
             }

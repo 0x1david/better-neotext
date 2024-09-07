@@ -17,6 +17,7 @@ use crossterm::{
 const NO_OF_BARS: u8 = 2;
 pub const LINE_NUMBER_SEPARATOR_EMPTY_COLUMNS: usize = 2;
 pub const LINE_NUMBER_RESERVED_COLUMNS: usize = 5;
+pub const FIND_MODE_DIRECTION_SYMBOL_GAP: u16 = 1;
 
 #[derive(Debug)]
 pub struct ViewPort {
@@ -123,7 +124,13 @@ impl ViewPort {
         })?;
 
         let (line, col) = match self.mode {
-            Modal::Find | Modal::Command => (
+            Modal::Find(_) => (
+                self.bottom_border as u16,
+                cursor.col() as u16
+                    + NOTIFICATION_BAR_TEXT_X_LOCATION
+                    + FIND_MODE_DIRECTION_SYMBOL_GAP,
+            ),
+            Modal::Command => (
                 self.bottom_border as u16,
                 cursor.col() as u16 + NOTIFICATION_BAR_TEXT_X_LOCATION,
             ),
