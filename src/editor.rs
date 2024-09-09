@@ -382,8 +382,8 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             )?],
             Action::JumpToNextSymbol => ok_vec![self.jump_two_boundaries(
                 Direction::Forward,
-                |ch| !ch.is_whitespace(),
-                |ch| !ch.is_whitespace(),
+                |ch| ch.is_alphanumeric() || ch == '_',
+                |ch| !ch.is_alphanumeric() && ch != '_' && !ch.is_whitespace(),
             )?],
             Action::ReverseJumpToNextWord => ok_vec![self.jump_two_boundaries(
                 Direction::Backward,
@@ -392,8 +392,8 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             )?],
             Action::ReverseJumpToNextSymbol => ok_vec![self.jump_two_boundaries(
                 Direction::Backward,
-                |ch| !ch.is_whitespace(),
-                |ch| !ch.is_whitespace(),
+                |ch| ch.is_alphanumeric() || ch == '_',
+                |ch| !ch.is_alphanumeric() && ch != '_' && !ch.is_whitespace(),
             )?],
 
             // Find and search actions
@@ -577,8 +577,11 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
 
         let dest = match direction {
             Direction::Forward => {
-                let dest = self.find(&first_boundary, pos)?;
-                self.find(&second_boundary, dest)?
+                let mut dest = self.find(&first_boundary, pos)?;
+                info!("First Destination found{:?}", &dest);
+                dest = self.find(&second_boundary, dest)?;
+                info!("Second Destination found{:?}", &dest);
+                dest
             }
             Direction::Backward => {
                 let dest = self.rfind(&first_boundary, pos)?;
