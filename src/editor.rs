@@ -477,6 +477,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             Command::None => ok_vec![BaseAction::ChangeMode(Modal::Normal)],
             Command::Find(s) => {
                 let lc = self.find(s, self.cursor.last_text_mode_pos);
+                info!("Found match for find on {:?}", lc);
 
                 match lc {
                     Err(Error::PatternNotFound) => ok_vec!(BaseAction::ChangeMode(Modal::Normal)),
@@ -485,7 +486,8 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 }
             }
             Command::Rfind(s) => {
-                let lc = self.find(s, self.cursor.last_text_mode_pos);
+                let lc = self.rfind(s, self.cursor.last_text_mode_pos);
+                info!("Found match for rfind on {:?}", lc);
 
                 match lc {
                     Err(Error::PatternNotFound) => ok_vec!(BaseAction::ChangeMode(Modal::Normal)),
@@ -505,15 +507,19 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
 
         match from.line.cmp(&target.line) {
             std::cmp::Ordering::Less => {
-                action_vec.push(BaseAction::MoveUp(target.line - from.line))
+                action_vec.push(BaseAction::MoveDown(target.line - from.line))
             }
             std::cmp::Ordering::Greater => {
-                action_vec.push(BaseAction::MoveDown(from.line - target.line))
+                action_vec.push(BaseAction::MoveUp(from.line - target.line))
             }
             std::cmp::Ordering::Equal => (),
         };
 
         action_vec.push(BaseAction::MoveRight(target.col));
+        info!(
+            "Movement needs to be done to reach target: {:?}",
+            action_vec
+        );
 
         Ok(action_vec)
     }
