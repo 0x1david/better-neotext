@@ -577,11 +577,21 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
 
         let dest = match direction {
             Direction::Forward => {
-                let mut dest = self.find(&first_boundary, pos)?;
+                let dest = self.find(&first_boundary, pos);
+                if let Err(Error::PatternNotFound) = dest {
+                    warn!("First Destination not found");
+                    return Ok(BaseAction::Nothing);
+                };
+                let dest = dest?;
+
                 info!("First Destination found{:?}", &dest);
-                dest = self.find(&second_boundary, dest)?;
+                let dest = self.find(&second_boundary, dest);
+                if let Err(Error::PatternNotFound) = dest {
+                    warn!("Second Destination not found");
+                    return Ok(BaseAction::Nothing);
+                };
                 info!("Second Destination found{:?}", &dest);
-                dest
+                dest?
             }
             Direction::Backward => {
                 let dest = self.rfind(&first_boundary, pos)?;
@@ -618,12 +628,18 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
     /// assert_eq!(result, Ok(LineCol{line: 2, col: 10})); // Found on line 2, column 10
     /// ```
     fn find(&self, query: impl Pattern, at: LineCol) -> Result<LineCol> {
+        let buf = &self.buffer.get_buffer_window(Some(at), None)?;
+        info!("{:?}", buf);
         query
-            .find_pattern(&self.buffer.get_buffer_window(Some(at), None)?)
+            .find_pattern(buf)
             .ok_or(Error::PatternNotFound)
-            .map(|v| LineCol {
-                line: v.line + at.line,
-                col: if v.line == 0 { v.col + at.col } else { v.col },
+            .map(|target| LineCol {
+                line: target.line + at.line,
+                col: if target.line == 0 {
+                    target.col + at.col
+                } else {
+                    target.col
+                },
             })
     }
 
@@ -655,8 +671,9 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
     /// assert_eq!(result, Ok(LineCol{line: 1, col: 5})); // Found on line 1, column 5
     /// ```
     fn rfind(&self, query: impl Pattern, at: LineCol) -> Result<LineCol> {
+        let buf = &self.buffer.get_buffer_window(None, Some(at))?;
         query
-            .rfind_pattern(&self.buffer.get_buffer_window(None, Some(at))?)
+            .rfind_pattern(buf)
             .ok_or(Error::PatternNotFound)
             .map(|v| LineCol {
                 line: v.line,
@@ -736,7 +753,7 @@ enum Action {
     Nothing,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Lazy<T> {
     inner: Option<T>,
 }
@@ -773,5 +790,81 @@ impl<T: Clone> Lazy<T> {
 impl<T> Default for Lazy<T> {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+mod test {
+    use super::*;
+    use crate::buffer::VecBuffer;
+    use crate::LineCol;
+
+    #[test]
+    fn test_jump_two_boundaries() {
+        // Create a VecBuffer with test content
+        let content = vec![
+            "Hello world! This is a test.".to_string(),
+            "Multiple   spaces   between words.".to_string(),
+            "Symbols: @#$% and _underscores_".to_string(),
+        ];
+        let buffer = VecBuffer::new(content);
+
+        let mut editor = Editor::new(buffer, false);
+
+        // Test forward word jump
+        let result = editor.jump_two_boundaries(Direction::Forward, char::is_whitespace, |ch| {
+            !ch.is_whitespace()
+        });
+        assert_eq!(
+            result.unwrap(),
+            BaseAction::SetCursor(LineCol { line: 0, col: 6 })
+        );
+
+        // Test backward word jump
+        editor.cursor.pos = LineCol { line: 0, col: 20 };
+        let result = editor.jump_two_boundaries(Direction::Backward, char::is_whitespace, |ch| {
+            !ch.is_whitespace()
+        });
+        assert_eq!(
+            result.unwrap(),
+            BaseAction::SetCursor(LineCol { line: 0, col: 13 })
+        );
+
+        // Test forward symbol jump
+        editor.cursor.pos = LineCol { line: 2, col: 0 };
+        let result = editor.jump_two_boundaries(
+            Direction::Forward,
+            |ch| ch.is_alphanumeric() || ch == '_',
+            |ch| !ch.is_alphanumeric() && ch != '_' && !ch.is_whitespace(),
+        );
+        assert_eq!(
+            result.unwrap(),
+            BaseAction::SetCursor(LineCol { line: 2, col: 8 })
+        );
+
+        // Test backward symbol jump
+        editor.cursor.pos = LineCol { line: 2, col: 20 };
+        let result = editor.jump_two_boundaries(
+            Direction::Backward,
+            |ch| ch.is_alphanumeric() || ch == '_',
+            |ch| !ch.is_alphanumeric() && ch != '_' && !ch.is_whitespace(),
+        );
+        assert_eq!(
+            result.unwrap(),
+            BaseAction::SetCursor(LineCol { line: 2, col: 13 })
+        );
+
+        // Test jump at end of buffer
+        editor.cursor.pos = LineCol { line: 2, col: 30 };
+        let result = editor.jump_two_boundaries(Direction::Forward, char::is_whitespace, |ch| {
+            !ch.is_whitespace()
+        });
+        assert_eq!(result.unwrap(), BaseAction::Nothing);
+
+        // Test jump at beginning of buffer
+        editor.cursor.pos = LineCol { line: 0, col: 0 };
+        let result = editor.jump_two_boundaries(Direction::Backward, char::is_whitespace, |ch| {
+            !ch.is_whitespace()
+        });
+        assert_eq!(result.unwrap(), BaseAction::Nothing);
     }
 }

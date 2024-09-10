@@ -10,7 +10,7 @@ pub trait Component {
     fn execute_action(&mut self, a: &BaseAction) -> Result<()>;
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BaseAction {
     Save,
 
@@ -308,7 +308,7 @@ impl Modal {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum Command {
     Find(String),
     Rfind(String),

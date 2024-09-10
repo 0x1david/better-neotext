@@ -24,7 +24,6 @@ impl Selection {
 #[derive(Clone, Debug)]
 pub struct Cursor {
     pub pos: LineCol,
-    pub previous_pos: LineCol,
     pos_initial: LineCol,
     plane: CursorPlane,
     pub last_text_mode_pos: LineCol,
@@ -86,7 +85,6 @@ impl Default for Cursor {
     fn default() -> Self {
         Self {
             pos: LineCol::default(),
-            previous_pos: LineCol::default(),
             pos_initial: LineCol::default(),
             plane: CursorPlane::Text,
             last_text_mode_pos: LineCol::default(),
@@ -97,7 +95,6 @@ impl Default for Cursor {
 impl Cursor {
     #[inline]
     pub fn go(&mut self, to: &LineCol) {
-        self.previous_pos = self.pos;
         self.pos = *to;
     }
     #[inline]
@@ -107,7 +104,6 @@ impl Cursor {
 
     #[inline]
     pub fn set_line(&mut self, new: usize) {
-        self.previous_pos = self.pos;
         self.pos.line = new;
     }
 
@@ -122,14 +118,12 @@ impl Cursor {
 
     #[inline]
     pub fn set_col(&mut self, new: usize) {
-        self.previous_pos = self.pos;
         self.pos.col = new;
     }
 
     /// Moves the cursor left by the specified distance, clamping at zero.
     #[inline]
     fn move_left(&mut self, dist: &usize) {
-        self.previous_pos = self.pos;
         let dest = self.col() - dist;
         self.set_col(dest)
     }
@@ -137,7 +131,6 @@ impl Cursor {
     /// Moves the cursor right by the specified distance, clamping at the end of a row.
     #[inline]
     fn jump_right(&mut self, dist: &usize) {
-        self.previous_pos = self.pos;
         let dest = self.col() + dist;
         self.set_col(dest)
     }
@@ -145,7 +138,6 @@ impl Cursor {
     /// Moves the cursor up by the specified distance, clamping at the top.
     #[inline]
     fn move_up(&mut self, dist: &usize) {
-        self.previous_pos = self.pos;
         let dest = self.line() - dist;
         self.set_line(dest);
     }
@@ -153,7 +145,6 @@ impl Cursor {
     /// Moves the cursor down by the specified distance, clamping at the bottom.
     #[inline]
     fn move_down(&mut self, dist: &usize) {
-        self.previous_pos = self.pos;
         let dest = self.line() + dist;
         self.set_line(dest)
     }
@@ -169,17 +160,16 @@ impl Cursor {
             } else {
                 self.last_text_mode_pos = self.pos;
             }
-            self.previous_pos = self.pos;
         }
 
         match modal {
             Modal::Command | Modal::Find(_) => {
                 self.plane = CursorPlane::CommandBar;
-                self.pos = LineCol { line: 0, col: 0 };
+                self.pos = self.last_text_mode_pos;
             }
             Modal::Normal | Modal::Insert | Modal::Visual | Modal::VisualLine => {
                 self.plane = CursorPlane::Text;
-                self.pos = self.last_text_mode_pos;
+                self.pos = LineCol { line: 0, col: 0 };
             }
         }
         self.pos_initial = LineCol {
@@ -190,7 +180,7 @@ impl Cursor {
 }
 
 /// Specifies at which plane the cursor is currently located.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 enum CursorPlane {
     Text,
     CommandBar,

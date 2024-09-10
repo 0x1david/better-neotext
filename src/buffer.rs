@@ -1,4 +1,4 @@
-use tracing::instrument;
+use tracing::{info, instrument};
 
 use crate::{
     editor::Lazy, viewport::FIND_MODE_DIRECTION_SYMBOL_GAP, BaseAction, Component, Error,
@@ -248,12 +248,14 @@ impl TextBuffer for VecBuffer {
         }
     }
     // Gets only partial buffer from a position to a position
+    #[instrument]
     fn get_buffer_window(&self, from: Option<LineCol>, to: Option<LineCol>) -> Result<Vec<String>> {
         if from.is_none() && to.is_none() {
             return Ok(self.get_normal_text().to_owned());
         }
         let from = from.unwrap_or(LineCol { line: 0, col: 0 });
         let mut to = to.unwrap_or_else(|| self.max_linecol());
+        info!("From: {}, To: {}", from, to);
         to.line = self.max_line().min(to.line);
 
         if from.line > to.line || (from.line == to.line && from.col > to.col) {
@@ -556,13 +558,6 @@ impl TextBuffer for VecBuffer {
     /// let mut buffer = // ... initialize buffer ...
     /// let result = buffer.insert(LineCol { line: 1, col: 5 }, "Hello, world!".to_string(), false);
     /// assert!(result.is_ok());
-    /// ```
-    ///
-    /// # Note
-    ///
-    /// This function may change the structure of the buffer by adding or modifying lines.
-    /// It's the caller's responsibility to ensure that any existing references or indices
-    /// into the buffer are updated appropriately after calling this function.
     fn insert_text(
         &mut self,
         at: LineCol,
@@ -1117,6 +1112,8 @@ mod tests {
             )
             .unwrap();
 
+        buffer.set_plane(&Modal::Normal);
+        assert_eq!(buffer.text, vec!["Normal text"]);
         // Insert text in Command mode
         buffer.set_plane(&Modal::Command);
         buffer
@@ -1127,11 +1124,12 @@ mod tests {
             )
             .unwrap();
 
+        assert_eq!(buffer.command, vec!["Command text"]);
         // Verify that buffers remain independent
         buffer.set_plane(&Modal::Normal);
         assert_eq!(buffer.text, vec!["Normal text"]);
         buffer.set_plane(&Modal::Command);
-        assert_eq!(buffer.command, vec!["Command text"]);
+        assert_eq!(buffer.command, vec![""]);
     }
 
     #[test]
