@@ -427,12 +427,20 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                     BaseAction::ChangeMode(Modal::Insert),
                 ]
             }
+
             Action::InsertModeBelow => ok_vec![
+                BaseAction::InsertLineAt(lazy!(self.cursor.pos), 1),
                 BaseAction::MoveDown(1),
                 BaseAction::ChangeMode(Modal::Insert),
             ],
             Action::InsertModeAbove => {
-                ok_vec![BaseAction::MoveUp(1), BaseAction::ChangeMode(Modal::Insert),]
+                let mut pos = self.cursor.pos;
+                pos.line -= 1;
+                ok_vec![
+                    BaseAction::InsertLineAt(lazy!(self.cursor.pos), 1),
+                    BaseAction::MoveUp(1),
+                    BaseAction::ChangeMode(Modal::Insert),
+                ]
             }
 
             // Edit actions

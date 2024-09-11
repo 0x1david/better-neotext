@@ -1,6 +1,6 @@
 use tracing::instrument;
 
-use crate::{BaseAction, Component, LineCol, Modal};
+use crate::{bars::get_debug_messages, notif_bar, BaseAction, Component, LineCol, Modal};
 
 #[derive(Debug, Clone, Copy)]
 pub struct Selection {
@@ -68,6 +68,10 @@ impl Component for ShadowCursor {
 impl Component for Cursor {
     #[instrument]
     fn execute_action(&mut self, a: &BaseAction) -> crate::Result<()> {
+        if self.plane.text() {
+            self.last_text_mode_pos = self.pos
+        }
+        notif_bar!(self.last_text_mode_pos;);
         match a {
             BaseAction::MoveUp(dist) => self.move_up(dist),
             BaseAction::MoveDown(dist) => self.move_down(dist),
@@ -151,25 +155,14 @@ impl Cursor {
 
     /// Updates the location the cursor points at depending on the current active modal state.
     fn mod_change(&mut self, modal: &Modal) {
-        if self.plane.text() {
-            if modal.is_visual_line() {
-                self.last_text_mode_pos = LineCol {
-                    line: self.pos.line,
-                    col: 0,
-                }
-            } else {
-                self.last_text_mode_pos = self.pos;
-            }
-        }
-
         match modal {
             Modal::Command | Modal::Find(_) => {
                 self.plane = CursorPlane::CommandBar;
-                self.pos = self.last_text_mode_pos;
+                self.pos = LineCol { line: 0, col: 0 };
             }
             Modal::Normal | Modal::Insert | Modal::Visual | Modal::VisualLine => {
                 self.plane = CursorPlane::Text;
-                self.pos = LineCol { line: 0, col: 0 };
+                self.pos = self.last_text_mode_pos;
             }
         }
         self.pos_initial = LineCol {

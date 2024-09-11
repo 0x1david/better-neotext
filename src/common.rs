@@ -315,3 +315,179 @@ pub enum Command {
     Exit,
     None,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn create_test_buffer() -> Vec<String> {
+        vec![
+            "Hello, world!".to_string(),
+            "This is a test.".to_string(),
+            "12345".to_string(),
+            "   Spaces   ".to_string(),
+        ]
+    }
+
+    #[test]
+    fn test_str_pattern() {
+        let buffer = create_test_buffer();
+        let pattern = "world";
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 0, col: 7 })
+        );
+    }
+
+    #[test]
+    fn test_string_pattern() {
+        let buffer = create_test_buffer();
+        let pattern = "test".to_string();
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 1, col: 10 })
+        );
+    }
+
+    #[test]
+    fn test_cow_str_pattern() {
+        let buffer = create_test_buffer();
+        let pattern: Cow<str> = Cow::Borrowed("This");
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 1, col: 0 })
+        );
+    }
+
+    #[test]
+    fn test_char_pattern() {
+        let buffer = create_test_buffer();
+        let pattern = '5';
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 2, col: 4 })
+        );
+    }
+
+    #[test]
+    fn test_char_predicate_pattern() {
+        let buffer = create_test_buffer();
+        let pattern = |c: char| c.is_ascii_digit();
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 2, col: 0 })
+        );
+    }
+
+    #[test]
+    fn test_pattern_not_found() {
+        let buffer = create_test_buffer();
+        let pattern = "nonexistent";
+        assert_eq!(pattern.find_pattern(&buffer), None);
+    }
+    #[test]
+    fn test_empty_buffer() {
+        let buffer: Vec<String> = Vec::new();
+        let pattern = "test";
+        assert_eq!(pattern.find_pattern(&buffer), None);
+    }
+
+    #[test]
+    fn test_pattern_at_start() {
+        let buffer = vec!["Start here".to_string()];
+        let pattern = "Start";
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 0, col: 0 })
+        );
+    }
+
+    #[test]
+    fn test_pattern_at_end() {
+        let buffer = vec!["End here".to_string()];
+        let pattern = "here";
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 0, col: 4 })
+        );
+    }
+
+    #[test]
+    fn test_pattern_spanning_lines() {
+        let buffer = vec!["First ".to_string(), "line".to_string()];
+        let pattern = "First line";
+        assert_eq!(pattern.find_pattern(&buffer), None);
+    }
+
+    #[test]
+    fn test_char_pattern_whitespace() {
+        let buffer = vec!["No space".to_string(), " Leading space".to_string()];
+        let pattern = ' ';
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 0, col: 2 })
+        );
+    }
+
+    #[test]
+    fn test_char_predicate_uppercase() {
+        let buffer = vec!["lowercase".to_string(), "UPPERCASE".to_string()];
+        let pattern = |c: char| c.is_ascii_uppercase();
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 1, col: 0 })
+        );
+    }
+
+    #[test]
+    fn test_pattern_with_special_chars() {
+        let buffer = vec!["Special: !@#$%^&*()".to_string()];
+        let pattern = "$%^&";
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 0, col: 12 })
+        );
+    }
+
+    #[test]
+    fn test_pattern_case_sensitivity() {
+        let buffer = vec!["Case Sensitive".to_string()];
+        let pattern = "case";
+        assert_eq!(pattern.find_pattern(&buffer), None);
+    }
+
+    #[test]
+    fn test_pattern_overlapping() {
+        let buffer = vec!["aaa".to_string()];
+        let pattern = "aa";
+        assert_eq!(
+            pattern.find_pattern(&buffer),
+            Some(LineCol { line: 0, col: 0 })
+        );
+    }
+    #[test]
+    fn test_sequential_char_predicates() {
+        let buffer = vec![
+            "First line with some numbers 123".to_string(),
+            "Second line without numbers".to_string(),
+            "Third line with 456 and more text".to_string(),
+            "Fourth line ends with numbers 789".to_string(),
+        ];
+
+        let predicate1 = |c: char| c.is_ascii_digit();
+
+        let predicate2 = |c: char| c.is_ascii_uppercase();
+
+        let result1 = predicate1.find_pattern(&buffer);
+        assert_eq!(result1, Some(LineCol { line: 0, col: 29 }));
+
+        let result2 = predicate2.find_pattern(&buffer[result1.unwrap().line + 1..]);
+        assert_eq!(result2, Some(LineCol { line: 0, col: 0 })); // 'S' in "Second"
+
+        let final_result = result2.map(|lc| LineCol {
+            line: lc.line + result1.unwrap().line + 1,
+            col: lc.col,
+        });
+        assert_eq!(final_result, Some(LineCol { line: 1, col: 0 }));
+    }
+}
