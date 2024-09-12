@@ -134,7 +134,9 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
                 (KeyCode::Char('W'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                     Action::JumpToNextWord
                 }
-                (KeyCode::Char('w'), KeyModifiers::NONE) => Action::JumpToNextSymbol,
+                (KeyCode::Char('w'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
+                    Action::JumpToNextSymbol
+                }
                 (KeyCode::Char('B'), KeyModifiers::NONE | KeyModifiers::SHIFT) => {
                     Action::ReverseJumpToNextWord
                 }
@@ -378,22 +380,22 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
             Action::JumpToNextWord => ok_vec![self.jump_two_boundaries(
                 Direction::Forward,
                 char::is_whitespace,
-                |ch| !ch.is_whitespace(),
+                |ch| !char::is_whitespace(ch),
             )?],
             Action::JumpToNextSymbol => ok_vec![self.jump_two_boundaries(
                 Direction::Forward,
-                |ch| ch.is_alphanumeric() || ch == '_',
-                |ch| !ch.is_alphanumeric() && ch != '_' && !ch.is_whitespace(),
+                |ch| !char::is_whitespace(ch),
+                |ch| !char::is_alphanumeric(ch),
             )?],
             Action::ReverseJumpToNextWord => ok_vec![self.jump_two_boundaries(
                 Direction::Backward,
                 char::is_whitespace,
-                |ch| !ch.is_whitespace(),
+                |ch| !char::is_whitespace(ch),
             )?],
             Action::ReverseJumpToNextSymbol => ok_vec![self.jump_two_boundaries(
                 Direction::Backward,
-                |ch| ch.is_alphanumeric() || ch == '_',
-                |ch| !ch.is_alphanumeric() && ch != '_' && !ch.is_whitespace(),
+                |ch| !char::is_whitespace(ch),
+                |ch| !char::is_alphanumeric(ch),
             )?],
 
             // Find and search actions
@@ -576,7 +578,20 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         F1: Fn(char) -> bool,
         F2: Fn(char) -> bool,
     {
-        let mut pos = self.cursor.last_text_mode_pos;
+        // let mut pos = self.cursor.pos;
+        // // Avoid getting stuck if jump destination is directly on cursor
+        // if self.buffer.max_normal_col(pos.line) > pos.col {
+        //     pos.col += 1;
+        // };
+
+        // let mut dest = self.find(&first_boundary, pos)?;
+        // // let dest = dest?;
+        // dest = self.find(&second_boundary, dest)?;
+        // Ok(BaseAction::SetCursor(dest))
+
+        //////////////////////////
+
+        let mut pos = self.cursor.pos;
 
         // Avoid getting stuck if jump destination is directly on cursor
         if self.buffer.max_normal_col(pos.line) > pos.col {
@@ -586,6 +601,7 @@ impl<Buff: TextBuffer + Debug> Editor<Buff> {
         let dest = match direction {
             Direction::Forward => {
                 let dest = self.find(&first_boundary, pos);
+
                 if let Err(Error::PatternNotFound) = dest {
                     warn!("First Destination not found");
                     return Ok(BaseAction::Nothing);
